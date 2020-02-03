@@ -389,10 +389,28 @@ NTSTATUS NTAPI NtLoadDllMemory(
 	IN  size_t BufferSize
 );
 
-#define LOAD_FLAGS_NOT_ADD_LDR_ENTRY
-#define LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION
 
-#define LOAD_FLAGS_NOT_MAP_DLL
+/*
+	NtLoadDllMemoryEx dwFlags
+*/
+//If this flag is specified, all subsequent flags will be ignored.
+//Also, will be incompatible with Win32 API.
+#define LOAD_FLAGS_NOT_MAP_DLL						0x10000000
+
+//If this flag is specified, exception handling will not be supported.
+#define LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION		0x00000001
+
+//If this flag is specified, NtLoadDllMemory and NtUnloadDllMemory will not use reference counting.
+//If you try to load the same module, it will fail. When you unload the module,
+//	it will be unloaded without checking the reference count.
+#define LOAD_FLAGS_NOT_USE_REFERENCE_COUNT			0x00000002
+
+//If this flag is specified, DllName and DllFullName cannot be nullptr,
+//	they can be arbitrary strings without having to be correct file names and paths.
+//Otherwise, DllName and DllFullName will use random names if they are nullptr.
+//For compatibility with GetModuleHandle, DllName and DllFullName should be guaranteed to always end in .dll
+#define LOAD_FLAGS_USE_DLL_NAME						0x00000004
+
 
 NTSTATUS NTAPI NtLoadDllMemoryExW(
 	OUT HMEMORYMODULE* BaseAddress,

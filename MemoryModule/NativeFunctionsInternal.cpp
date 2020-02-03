@@ -556,6 +556,14 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 	IN LPCWSTR DllFullName OPTIONAL) {
 	if (IsBadReadPtr(BufferAddress, BufferSize) || IsBadWritePtr(BaseAddress, sizeof(HMEMORYMODULE)))return STATUS_ACCESS_VIOLATION;
 	*BaseAddress = nullptr;
+	PMEMORYMODULE module = nullptr;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	if (dwFlags & LOAD_FLAGS_NOT_MAP_DLL) {
+		dwFlags &= LOAD_FLAGS_NOT_MAP_DLL;
+		DllName = DllFullName = nullptr;
+	}
+	if (dwFlags & LOAD_FLAGS_USE_DLL_NAME && (!DllName || !DllFullName))return STATUS_INVALID_PARAMETER_3;
 
 	if (DllName) {
 		PLIST_ENTRY ListHead, ListEntry;
@@ -573,9 +581,11 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 				!wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, CurEntry->BaseDllName.Length / sizeof(wchar_t))) {
 				/* Let's compare their headers */
 				if (!(h2 = RtlImageNtHeader(CurEntry->DllBase)))continue;
+				if (!(module = MapMemoryModuleHandle(CurEntry->DllBase)))continue;
 				if ((h1->OptionalHeader.SizeOfCode == h2->OptionalHeader.SizeOfCode) &&
 					(h1->OptionalHeader.SizeOfHeaders == h2->OptionalHeader.SizeOfHeaders)) {
 					/* This is our entry!, update load count and return success */
+					if (!module->UseReferenceCount || dwFlags & LOAD_FLAGS_NOT_USE_REFERENCE_COUNT)return STATUS_INVALID_PARAMETER_3;
 					NtUpdateReferenceCount(CurEntry, FLAG_REFERENCE);
 					*BaseAddress = CurEntry->DllBase;
 					return STATUS_SUCCESS;
@@ -596,23 +606,68 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 			return STATUS_UNSUCCESSFUL;
 		}
 	}
+	if (!(module = MapMemoryModuleHandle(*BaseAddress))) {
+		__fastfail(STATUS_INVALID_ADDRESS);
+		return STATUS_INVALID_ADDRESS;
+	}
+	module->loadFromNtLoadDllMemory = true;
+	if (dwFlags & LOAD_FLAGS_NOT_MAP_DLL) return STATUS_SUCCESS;
+	status = NtMapDllMemory(*BaseAddress, DllName, DllFullName, LdrEntry);
+	if (!NT_SUCCESS(status)) {
+		NtUnloadDllMemory(*BaseAddress);
+		*BaseAddress = nullptr;
+		return status;
+	}
+	module->MappedDll = true;
+	if (!(dwFlags & LOAD_FLAGS_NOT_USE_REFERENCE_COUNT))module->UseReferenceCount = true;
+	if (dwFlags & LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION)return STATUS_SUCCESS;
+	status = RtlInsertInvertedFunctionTable((PVOID)module->codeBase, RtlImageNtHeader(*BaseAddress)->OptionalHeader.SizeOfImage);
+	if (!NT_SUCCESS(status)) {
+		NtUnloadDllMemory(*BaseAddress);
+		*BaseAddress = nullptr;
+		return status;
+	}
+	module->InsertInvertedFunctionTableEntry = true;
+	return STATUS_SUCCESS;
+}
 
-	NTSTATUS status = NtMapDllMemory(*BaseAddress, DllName, DllFullName, LdrEntry);
-	if (!NT_SUCCESS(status)) MemoryFreeLibrary(*BaseAddress);
-	status = RtlInsertInvertedFunctionTable((PVOID)RtlImageNtHeader(*BaseAddress)->OptionalHeader.ImageBase, RtlImageNtHeader(*BaseAddress)->OptionalHeader.SizeOfImage);
-	if (!NT_SUCCESS(status)) MemoryFreeLibrary(*BaseAddress);
+NTSTATUS NtLoadDllMemoryExA(
+	OUT HMEMORYMODULE* BaseAddress,
+	OUT PLDR_DATA_TABLE_ENTRY* LdrEntry OPTIONAL,
+	IN DWORD dwFlags,
+	IN LPVOID BufferAddress,
+	IN size_t BufferSize,
+	IN LPCSTR DllName OPTIONAL,
+	IN LPCSTR DllFullName OPTIONAL){
+	LPWSTR _DllName = nullptr, _DllFullName = nullptr;
+	size_t size;
+	NTSTATUS status;
+	if (DllName) {
+		size = strlen(DllName) + 1;
+		_DllName = new wchar_t[size];
+		mbstowcs(_DllName, DllName, size);
+	}
+	if (DllFullName) {
+		size = strlen(DllFullName) + 1;
+		_DllFullName = new wchar_t[size];
+		mbstowcs(_DllFullName, DllFullName, size);
+	}
+	status = NtLoadDllMemoryExW(BaseAddress, LdrEntry, dwFlags, BufferAddress, BufferSize, _DllName, _DllFullName);
+	if (_DllName)delete[]_DllName;
+	if (_DllFullName)delete[]_DllFullName;
 	return status;
 }
 
 NTSTATUS NTAPI NtUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 	if (IsBadReadPtr(BaseAddress, sizeof(size_t)))return STATUS_ACCESS_VIOLATION;
-	if (!IsValidMemoryModuleHandle(BaseAddress))return STATUS_INVALID_HANDLE;
-
+	
 	PLIST_ENTRY ListHead, ListEntry;
 	PLDR_DATA_TABLE_ENTRY CurEntry;
 	ULONG count = 0;
 	NTSTATUS status = STATUS_SUCCESS;
+	PMEMORYMODULE module = MapMemoryModuleHandle(BaseAddress);
 
+	if (!module || !module->loadFromNtLoadDllMemory)return STATUS_INVALID_HANDLE;
 	ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
 	ListEntry = ListHead->Flink;
 	while (ListEntry != ListHead) {
@@ -623,13 +678,20 @@ NTSTATUS NTAPI NtUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 		/* Check if name matches */
 		if (CurEntry->DllBase == BaseAddress) {
 			if (RtlImageNtHeader(BaseAddress)->OptionalHeader.SizeOfImage == CurEntry->SizeOfImage) {
-				status = NtGetReferenceCount(CurEntry, &count);
-				if (!NT_SUCCESS(status))return status;
+				if (module->UseReferenceCount) {
+					status = NtGetReferenceCount(CurEntry, &count);
+					if (!NT_SUCCESS(status))return status;
+				}
 				if (!count) {
-					status = RtlRemoveInvertedFunctionTable(BaseAddress);
-					if (!NT_SUCCESS(status))__fastfail(status);
+					module->underUnload = true;
+					if (module->MappedDll) {
+						if (module->InsertInvertedFunctionTableEntry) {
+							status = RtlRemoveInvertedFunctionTable(BaseAddress);
+							if (!NT_SUCCESS(status))__fastfail(status);
+						}
+						if (!NtFreeLdrDataTableEntry(CurEntry))__fastfail(STATUS_NOT_SUPPORTED);
+					}
 					if (!MemoryFreeLibrary(BaseAddress))__fastfail(STATUS_UNSUCCESSFUL);
-					if (!NtFreeLdrDataTableEntry(CurEntry))__fastfail(STATUS_NOT_SUPPORTED);
 					return STATUS_SUCCESS;
 				}
 				else {

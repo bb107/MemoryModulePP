@@ -24,6 +24,7 @@
     <ClCompile Include="NativeFunctionsInternal.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="LoadDllMemoryApi.h" />
     <ClInclude Include="MemoryModule.h" />
     <ClInclude Include="Native.h" />
     <ClInclude Include="NativeFunctionsInternal.h" />

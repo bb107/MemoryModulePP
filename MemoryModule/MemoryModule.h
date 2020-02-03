@@ -44,28 +44,28 @@ typedef struct _MEMORYMODULE {
 	ULONG64 Signature;
 	__declspec(align(sizeof(size_t))) struct {
 		DWORD SizeofHeaders;
-
-		//Not implemented
-		struct {
-			union {
+		union {
+			struct {
 				//Status Flags
 				BYTE initialized : 1;
-				BYTE reservedStatusFlags : 7;
+				BYTE loadFromNtLoadDllMemory : 1;
+				BYTE underUnload : 1;
+				BYTE reservedStatusFlags : 5;
 
 				BYTE cbFlagsReserved;
 
 				//Load Flags
-				WORD notMapDll : 1;
-				WORD notInsertLdrEntry : 1;
-				WORD notInsertInvertedFunctionTableEntry : 1;
-				WORD notUseReferenceCount : 1;
-				WORD reservedLoadFlags : 12;
+				WORD MappedDll : 1;
+				WORD InsertInvertedFunctionTableEntry : 1;
+				WORD UseReferenceCount : 1;
+				WORD reservedLoadFlags : 13;
+
 			};
-			DWORD dwModuleFlags;
+			DWORD dwFlags;
 		};
 	};
 
-	LPBYTE codeBase;						//codeBase == ImageBase + OptionalHeader.BaseOfCode;
+	LPBYTE codeBase;						//codeBase == ImageBase
 	__declspec(align(sizeof(size_t))) struct {
 		PVOID lpReserved;
 	};
@@ -145,6 +145,8 @@ extern "C" {
     int MemoryLoadStringEx(HMEMORYMODULE, UINT, LPTSTR, int, WORD);
 
 	bool WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule);
+
+	PMEMORYMODULE WINAPI MapMemoryModuleHandle(HMEMORYMODULE hModule);
 
 #ifdef __cplusplus
 }

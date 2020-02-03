@@ -5,9 +5,6 @@
 #include "rtltype.h"
 #include "ntstatus.h"
 #include <algorithm>
-#ifdef DEBUG_OUTPUT
-#include <stdio.h>
-#endif
 
 #if _MSC_VER
 #pragma warning(disable:4055)
@@ -15,10 +12,6 @@
 #pragma warning(error: 4267)
 #pragma warning(disable:4996)
 #define inline __inline
-#endif
-
-#ifndef IMAGE_SIZEOF_BASE_RELOCATION
-#define IMAGE_SIZEOF_BASE_RELOCATION (sizeof(IMAGE_BASE_RELOCATION))
 #endif
 
 #ifdef _WIN64
@@ -549,7 +542,7 @@ static int _find(const void* a, const void* b) {
 
 FARPROC MemoryGetProcAddress(HMEMORYMODULE mod, LPCSTR name) {
 	PMEMORYMODULE module = MapMemoryModuleHandle(mod);
-	unsigned char* codeBase = module->codeBase - module->headers_align;
+	unsigned char* codeBase = module->codeBase;
 	DWORD idx = 0;
 	PIMAGE_EXPORT_DIRECTORY exports;
 	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
@@ -632,6 +625,7 @@ bool MemoryFreeLibrary(HMEMORYMODULE mod) {
 	PIMAGE_NT_HEADERS headers = module ? GetImageNtHeaders(module) : nullptr;
 
 	if (!module || module->Signature != MEMORY_MODULE_SIGNATURE || !headers) return false;
+	if (module->loadFromNtLoadDllMemory && !module->underUnload)return false;
 	if (module->initialized) {
 		DllEntryProc DllEntry = (DllEntryProc)(LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint);
 		(*DllEntry)((HINSTANCE)module->codeBase, DLL_PROCESS_DETACH, 0);

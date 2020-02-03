@@ -38,5 +38,8 @@
     <ClInclude Include="NativeFunctionsInternal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="LoadDllMemoryApi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

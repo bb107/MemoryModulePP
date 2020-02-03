@@ -31,7 +31,7 @@ int main() {
     if (hModule)test = GetProcAddress(hModule, "test");
     printf("m1:\n\tHMEMORYMODULE\t= 0x%p\n\tHMODULE\t\t= 0x%p\n\tModuleFileName\t= %s\n\ttest\t\t= 0x%p\n\n", m1, hModule, name, test);
     if (test)test();
-
+    
     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)test, &hModule);
     GetModuleFileNameA(hModule, name, MAX_PATH);
     test = GetProcAddress(hModule, "test");
