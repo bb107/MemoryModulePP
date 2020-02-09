@@ -30,6 +30,9 @@
     <ClInclude Include="NativeFunctionsInternal.h" />
     <ClInclude Include="rtltype.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\README.md" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <ProjectGuid>{5B1F46DB-036E-4A50-AF5F-F5D6584D42C6}</ProjectGuid>

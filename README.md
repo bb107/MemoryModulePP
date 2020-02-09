@@ -8,6 +8,11 @@ MemoryModulePP, used to load a DLL from memory. MemoryModulePP is compatible wit
 
 **This repository is under development.**
 
+# NewFeatures
+  - Compatible with Win32 API: LoadStringA/W
+  - Support for TLS(Thread Local Storage)
+  - DllMain can receive four types of notifications
+
 # Features
   - Compatible with Win32 API (GetModuleHandleA/W/Ex GetModuleFileNameA/W/Ex GetProcAddress)
   - Support for C ++ exceptions and SEH

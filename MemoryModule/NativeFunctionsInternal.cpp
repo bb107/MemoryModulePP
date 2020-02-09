@@ -274,15 +274,15 @@ static NTSTATUS NTAPI NtRemoveModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTR
 
 static bool NTAPI NtInitializeLdrDataTableEntry(
 	OUT PLDR_DATA_TABLE_ENTRY LdrEntry,
+	IN DWORD dwFlags,
 	IN PVOID BaseAddress,
-	IN ULONG SizeofImage,
-	IN DWORD TimeDateStamp,
 	IN UNICODE_STRING &DllBaseName,
-	IN UNICODE_STRING &DllFullName,
-	IN PVOID EntryPoint) {
-
+	IN UNICODE_STRING &DllFullName) {
+	UNREFERENCED_PARAMETER(dwFlags);
 	RtlZeroMemory(LdrEntry, NtLdrDataTableEntrySize());
 	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(BaseAddress);
+	if (!headers)return false;
+	bool FlagsProcessed = false;
 
 	switch (NtWindowsVersion()) {
 	case win10:
@@ -300,11 +300,16 @@ static bool NTAPI NtInitializeLdrDataTableEntry(
 		entry->LoadReason = LoadReasonDynamicLoad;
 		if (!NT_SUCCESS(NtInsertModuleBaseAddressIndexNode(LdrEntry, BaseAddress)))return false;
 		if (!(entry->DdagNode = (decltype(entry->DdagNode))NtAllocateLdrpHeap(sizeof(_LDR_DDAG_NODE))))return false;
-		NtInitializeListEntry(&entry->NodeModuleLink);
-		NtInitializeListEntry(&entry->DdagNode->Modules);
-		NtInitializeSingleEntry(&entry->DdagNode->CondenseLink);
+		//NtInitializeListEntry(&entry->NodeModuleLink);
+		//NtInitializeListEntry(&entry->DdagNode->Modules);
+		entry->NodeModuleLink.Flink = &entry->DdagNode->Modules;
+		entry->NodeModuleLink.Blink = &entry->DdagNode->Modules;
+		entry->DdagNode->Modules.Flink = &entry->NodeModuleLink;
+		entry->DdagNode->Modules.Blink = &entry->NodeModuleLink;
 		entry->DdagNode->State = LdrModulesReadyToRun;
 		entry->DdagNode->LoadCount = 0;
+		
+		NtInitializeSingleEntry(&entry->DdagNode->CondenseLink);
 	}
 
 	case win7: {
@@ -325,12 +330,13 @@ static bool NTAPI NtInitializeLdrDataTableEntry(
 	}
 	case xp: {
 		LdrEntry->DllBase = BaseAddress;
-		LdrEntry->SizeOfImage = SizeofImage;
-		LdrEntry->TimeDateStamp = TimeDateStamp;
+		LdrEntry->SizeOfImage = headers->OptionalHeader.SizeOfImage;
+		LdrEntry->TimeDateStamp = headers->FileHeader.TimeDateStamp;
 		LdrEntry->BaseDllName = DllBaseName;
 		LdrEntry->FullDllName = DllFullName;
-		LdrEntry->EntryPoint = EntryPoint;
-		if (headers->OptionalHeader.DllCharacteristics & IMAGE_FILE_DLL)LdrEntry->Flags |= LDRP_IMAGE_DLL;
+		LdrEntry->EntryPoint = (PVOID)((size_t)BaseAddress + headers->OptionalHeader.AddressOfEntryPoint);
+		if (!FlagsProcessed) LdrEntry->Flags = LDRP_IMAGE_DLL | LDRP_ENTRY_INSERTED | LDRP_ENTRY_PROCESSED | LDRP_PROCESS_ATTACH_CALLED;
+		NtInitializeListEntry(&LdrEntry->HashLinks);
 		return true;
 	}
 	default:return false;
@@ -355,6 +361,7 @@ static bool NTAPI NtFreeLdrDataTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 		NtFreeLdrpHeap(LdrEntry->FullDllName.Buffer);
 		RemoveEntryList(&LdrEntry->InLoadOrderLinks);
 		RemoveEntryList(&LdrEntry->InMemoryOrderLinks);
+		RemoveEntryList(&LdrEntry->InInitializationOrderLinks);
 		RemoveEntryList(&LdrEntry->HashLinks);
 		NtFreeLdrpHeap(LdrEntry);
 		return true;
@@ -508,9 +515,10 @@ static VOID NTAPI NtInsertMemoryTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	/* Insert into other lists */
 	InsertTailList(&PebData->InLoadOrderModuleList, &LdrEntry->InLoadOrderLinks);
 	InsertTailList(&PebData->InMemoryOrderModuleList, &LdrEntry->InMemoryOrderLinks);
+	InsertTailList(&PebData->InInitializationOrderModuleList, &LdrEntry->InInitializationOrderLinks);
 }
 
-static NTSTATUS NTAPI NtMapDllMemory(IN HMEMORYMODULE ViewBase, IN PCWSTR DllName OPTIONAL,
+static NTSTATUS NTAPI NtMapDllMemory(IN HMEMORYMODULE ViewBase, IN DWORD dwFlags, IN PCWSTR DllName OPTIONAL,
 	IN PCWSTR lpFullDllName OPTIONAL, OUT PLDR_DATA_TABLE_ENTRY* DataTableEntry OPTIONAL) {
 
 	UNICODE_STRING FullDllName, BaseDllName;
@@ -526,11 +534,7 @@ static NTSTATUS NTAPI NtMapDllMemory(IN HMEMORYMODULE ViewBase, IN PCWSTR DllNam
 		return STATUS_NO_MEMORY;
 	}
 
-	if (!NtInitializeLdrDataTableEntry(LdrEntry, ViewBase,
-		NtHeaders->OptionalHeader.SizeOfImage,
-		NtHeaders->FileHeader.TimeDateStamp,
-		BaseDllName, FullDllName,
-		(PVOID)(NtHeaders->OptionalHeader.AddressOfEntryPoint + NtHeaders->OptionalHeader.ImageBase))) {
+	if (!NtInitializeLdrDataTableEntry(LdrEntry, dwFlags, ViewBase, BaseDllName, FullDllName)) {
 		NtFreeLdrpHeap(LdrEntry);
 		NtFreeLdrpHeap(BaseDllName.Buffer);
 		NtFreeLdrpHeap(FullDllName.Buffer);
@@ -548,16 +552,25 @@ NTSTATUS NTAPI NtLoadDllMemory(OUT HMEMORYMODULE* BaseAddress, IN LPVOID BufferA
 
 NTSTATUS NTAPI NtLoadDllMemoryExW(
 	OUT HMEMORYMODULE* BaseAddress,
-	OUT PLDR_DATA_TABLE_ENTRY* LdrEntry OPTIONAL,
+	OUT PVOID* LdrEntry OPTIONAL,
 	IN DWORD dwFlags,
 	IN LPVOID BufferAddress,
 	IN size_t BufferSize,
 	IN LPCWSTR DllName OPTIONAL,
 	IN LPCWSTR DllFullName OPTIONAL) {
-	if (IsBadReadPtr(BufferAddress, BufferSize) || IsBadWritePtr(BaseAddress, sizeof(HMEMORYMODULE)))return STATUS_ACCESS_VIOLATION;
-	*BaseAddress = nullptr;
 	PMEMORYMODULE module = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
+	PLDR_DATA_TABLE_ENTRY ModuleEntry = nullptr;
+
+	__try {
+		if (IsBadReadPtr(BufferAddress, BufferSize))status = STATUS_ACCESS_VIOLATION;
+		*BaseAddress = nullptr;
+		if (LdrEntry)*LdrEntry = nullptr;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = GetExceptionCode();
+	}
+	if (!NT_SUCCESS(status))return status;
 
 	if (dwFlags & LOAD_FLAGS_NOT_MAP_DLL) {
 		dwFlags &= LOAD_FLAGS_NOT_MAP_DLL;
@@ -612,28 +625,44 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 	}
 	module->loadFromNtLoadDllMemory = true;
 	if (dwFlags & LOAD_FLAGS_NOT_MAP_DLL) return STATUS_SUCCESS;
-	status = NtMapDllMemory(*BaseAddress, DllName, DllFullName, LdrEntry);
+
+	status = NtMapDllMemory(*BaseAddress, dwFlags, DllName, DllFullName, &ModuleEntry);
 	if (!NT_SUCCESS(status)) {
 		NtUnloadDllMemory(*BaseAddress);
 		*BaseAddress = nullptr;
 		return status;
 	}
 	module->MappedDll = true;
+
+	if (LdrEntry)*LdrEntry = ModuleEntry;
+
 	if (!(dwFlags & LOAD_FLAGS_NOT_USE_REFERENCE_COUNT))module->UseReferenceCount = true;
+
 	if (dwFlags & LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION)return STATUS_SUCCESS;
 	status = RtlInsertInvertedFunctionTable((PVOID)module->codeBase, RtlImageNtHeader(*BaseAddress)->OptionalHeader.SizeOfImage);
 	if (!NT_SUCCESS(status)) {
 		NtUnloadDllMemory(*BaseAddress);
 		*BaseAddress = nullptr;
+		if (LdrEntry)*LdrEntry = nullptr;
 		return status;
 	}
 	module->InsertInvertedFunctionTableEntry = true;
+
+	if (dwFlags & LOAD_FLAGS_NOT_HANDLE_TLS)return STATUS_SUCCESS;
+	status = LdrpHandleTlsData(ModuleEntry);
+	if (!NT_SUCCESS(status)) {
+		NtUnloadDllMemory(*BaseAddress);
+		*BaseAddress = nullptr;
+		if (LdrEntry)*LdrEntry = nullptr;
+		return status;
+	}
+
 	return STATUS_SUCCESS;
 }
 
 NTSTATUS NtLoadDllMemoryExA(
 	OUT HMEMORYMODULE* BaseAddress,
-	OUT PLDR_DATA_TABLE_ENTRY* LdrEntry OPTIONAL,
+	OUT PVOID* LdrEntry OPTIONAL,
 	IN DWORD dwFlags,
 	IN LPVOID BufferAddress,
 	IN size_t BufferSize,
@@ -907,7 +936,7 @@ static NTSTATUS NTAPI RtlProtectMrdata(IN SIZE_T Protect) {
 NTSTATUS NTAPI RtlInsertInvertedFunctionTable(IN PVOID BaseAddress, IN size_t ImageSize) {
 	static auto table = PRTL_INVERTED_FUNCTION_TABLE(RtlFindLdrpInvertedFunctionTable());
 	if (!table)return STATUS_NOT_SUPPORTED;
-	bool need_virtual_protect = RtlIsWindowsVersionOrGreater(10, 0, 0);
+	bool need_virtual_protect = RtlIsWindowsVersionOrGreater(8, 3, 0);
 	NTSTATUS status;
 
 	if (need_virtual_protect) {
@@ -939,4 +968,145 @@ NTSTATUS NTAPI RtlRemoveInvertedFunctionTable(IN PVOID ImageBase) {
 	}
 
 	return STATUS_SUCCESS;
+}
+
+static NTSTATUS NTAPI LdrpHandleTlsDataXp(PLDR_DATA_TABLE_ENTRY LdrEntry) {
+	return STATUS_NOT_SUPPORTED;
+}
+NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
+	typedef NTSTATUS(__thiscall* _PTR_WIN8_1)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+	typedef NTSTATUS(__stdcall* _PTR_WIN)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+	union _FUNCTION_SET {
+		_PTR_WIN8_1 Win8_1_OrGreater;
+		_PTR_WIN	Default;
+		_FUNCTION_SET() {
+			this->Default = nullptr;
+		}
+		operator bool() {
+			return this->Default != nullptr;
+		}
+	};
+	static _FUNCTION_SET _LdrpHandleTlsData{};
+	static bool stdcall = false;
+	if (_LdrpHandleTlsData)
+		return stdcall ? _LdrpHandleTlsData.Default(LdrEntry) : _LdrpHandleTlsData.Win8_1_OrGreater(LdrEntry);
+	
+	DWORD Versions[3]{};
+	LPCVOID Feature = nullptr;
+	BYTE Size = 0;
+	WORD OffsetOfFunctionBegin = 0;
+	RtlGetNtVersionNumbers(Versions, Versions + 1, Versions + 2);
+	switch (Versions[0]) {
+	case 10: {
+		if (Versions[1])return STATUS_NOT_SUPPORTED;
+
+		//RS3
+		if (Versions[2] >= 16299) {
+			Size = 7;
+			//19H2
+			if (Versions[2] >= 18363)Feature = "\x74\x33\x44\x8D\x43\x09";
+			//RS5
+			else if (Versions[2] >= 17763) Feature = "\x8b\xc1\x8d\x4d\xbc\x51";
+			//RS4
+			else if (Versions[2] >= 17134) Feature = "\x33\xf6\x85\xc0\x79\x03";
+			//RS3
+			else Feature = "\x8b\xc1\x8d\x4d\xac\x51";
+#ifdef _WIN64
+			//RS6(19H1)
+			if (Versions[2] >= 18362) OffsetOfFunctionBegin = 0x46;			
+			//RS4
+			else if (Versions[2] >= 17134) OffsetOfFunctionBegin = 0x44;			
+			//RS3
+			else OffsetOfFunctionBegin = 0x43;
+#else
+			//RS6(19H1)
+			if (Versions[2] >= 18362) OffsetOfFunctionBegin = 0x2E;
+			//RS5
+			else if (Versions[2] >= 17763) OffsetOfFunctionBegin = 0x2C;
+			//RS3,4
+			else OffsetOfFunctionBegin = 0x18;
+#endif
+			break;
+		}
+		//RS2
+		else if (Versions[2] >= 15063) {
+			Size = 7;
+#ifdef _WIN64
+			OffsetOfFunctionBegin = 0x43;
+			Feature = "\x74\x33\x44\x8d\x43\x09";
+#else
+			OffsetOfFunctionBegin = 0x18;
+			Feature = "\x8b\xc1\x8d\x4d\xbc\x51";
+#endif
+			break;
+		}
+
+		// NO BREAK
+	}
+	case 6: {
+		switch (Versions[1]) {
+		//8.1
+		case 3: {
+#ifdef _WIN64
+			Size = 10;
+			OffsetOfFunctionBegin = 0x43;
+			Feature = "\x44\x8d\x43\x09\x4c\x8d\x4c\x24\x38";
+#else
+			Size = 8;
+			OffsetOfFunctionBegin = 0x1B;
+			Feature = "\x50\x6a\x09\x6a\x01\x8b\xc1";
+#endif
+			break;
+		}
+		//8
+		case 2: {
+#ifdef _WIN64
+			Size = 9;
+			OffsetOfFunctionBegin = 0x49;
+			Feature = "\x48\x8b\x79\x30\x45\x8d\x66\x01";
+#else
+			Size = 7;
+			OffsetOfFunctionBegin = 0xC;
+			Feature = "\x8b\x45\x08\x89\x45\xa0";
+#endif
+			break;
+		}
+		//7
+		case 1: {
+#ifdef _WIN64
+			Size = 12;
+			OffsetOfFunctionBegin = 0x27;
+			Feature = "\x41\xb8\x09\x00\x00\x00\x48\x8d\x44\x24\x38";
+#else
+			Size = 9;
+			OffsetOfFunctionBegin = 0x14;
+			Feature = "\x74\x20\x8d\x45\xd4\x50\x6a\x09";
+#endif
+			break;
+		}
+		default:return STATUS_NOT_SUPPORTED;
+		}
+		break;
+	}
+	
+	default: {
+		_LdrpHandleTlsData.Default = LdrpHandleTlsDataXp;
+		stdcall = true;
+		return LdrpHandleTlsDataXp(LdrEntry);
+	}
+	}
+
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(ntdll);
+	if (!Feature || !headers)return STATUS_NOT_SUPPORTED;
+	Size--;
+	for (size_t i = 0; i < headers->OptionalHeader.SizeOfCode - Size; ++i) {
+		if (RtlCompareMemory((PBYTE)ntdll + i, Feature, Size) == Size) {
+			_LdrpHandleTlsData.Default = (_PTR_WIN)((PBYTE)ntdll + i - OffsetOfFunctionBegin);
+			break;
+		}
+	}
+	if (!_LdrpHandleTlsData)return STATUS_NOT_SUPPORTED;
+	stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
+	return stdcall ? _LdrpHandleTlsData.Default(LdrEntry) : _LdrpHandleTlsData.Win8_1_OrGreater(LdrEntry);
 }

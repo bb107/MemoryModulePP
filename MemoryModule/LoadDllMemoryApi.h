@@ -52,6 +52,7 @@ int MemoryLoadString(HMEMORYMODULE, UINT, LPTSTR, int);
  */
 int MemoryLoadStringEx(HMEMORYMODULE, UINT, LPTSTR, int, WORD);
 
+
 NTSTATUS NTAPI NtLoadDllMemory(
 	OUT HMEMORYMODULE* BaseAddress,
 	IN  LPVOID BufferAddress,
@@ -59,7 +60,7 @@ NTSTATUS NTAPI NtLoadDllMemory(
 );
 
 /*
-	NtLoadDllMemoryEx dwFlags
+    NtLoadDllMemoryEx dwFlags
 */
 
 //If this flag is specified, all subsequent flags will be ignored.
@@ -77,12 +78,15 @@ NTSTATUS NTAPI NtLoadDllMemory(
 //If this flag is specified, DllName and DllFullName cannot be nullptr,
 //	they can be arbitrary strings without having to be correct file names and paths.
 //Otherwise, DllName and DllFullName will use random names if they are nullptr.
-//For compatibility with GetModuleHandle, DllName and DllFullName should be guaranteed to always end in .dll
+//For compatibility with GetModuleHandle, DllName and DllFullName should be guaranteed to always end in ".dll"
 #define LOAD_FLAGS_USE_DLL_NAME						0x00000004
+
+//Dont call LdrpHandleTlsData routine if this flag is specified.
+#define LOAD_FLAGS_NOT_HANDLE_TLS					0x00000008
 
 NTSTATUS NTAPI NtLoadDllMemoryExW(
 	OUT HMEMORYMODULE* BaseAddress,
-	OUT PLDR_DATA_TABLE_ENTRY* LdrEntry OPTIONAL,
+	OUT PVOID* LdrEntry OPTIONAL,
 	IN DWORD dwFlags,
 	IN LPVOID BufferAddress,
 	IN size_t BufferSize,
@@ -91,7 +95,7 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 );
 NTSTATUS NTAPI NtLoadDllMemoryExA(
 	OUT HMEMORYMODULE* BaseAddress,
-	OUT PLDR_DATA_TABLE_ENTRY* LdrEntry OPTIONAL,
+	OUT PVOID* LdrEntry OPTIONAL,
 	IN DWORD dwFlags,
 	IN LPVOID BufferAddress,
 	IN size_t BufferSize,
