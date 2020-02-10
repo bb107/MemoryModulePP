@@ -1251,7 +1251,7 @@ NTSTATUS NTAPI NtQueryVirtualMemory(
 	OUT PSIZE_T              ResultLength OPTIONAL);
 
 
-PVOID RtlImageDirectoryEntryToData(
+PVOID NTAPI RtlImageDirectoryEntryToData(
 	PVOID BaseAddress,
 	BOOLEAN 	MappedAsImage,
 	USHORT 	Directory,
@@ -1338,3 +1338,5 @@ typedef struct _UNWIND_INFO {
 #define GetExceptionDataPtr(info) ((PVOID)((PULONG)GetLanguageSpecificData(info) + 1)
 
 NTSTATUS NTAPI NtQuerySystemTime(PLARGE_INTEGER SystemTime);
+PVOID NTAPI RtlEncodeSystemPointer(PVOID Pointer);
+PVOID NTAPI RtlDecodeSystemPointer(PVOID Pointer);

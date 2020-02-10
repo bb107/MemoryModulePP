@@ -306,15 +306,15 @@ NTSTATUS NTAPI NtQueryVirtualMemory(
 		(ProcessHandle, BaseAddress, MemoryInformationClass, Buffer, Length, ResultLength);
 }
 
-PVOID RtlImageDirectoryEntryToData(PVOID BaseAddress, BOOLEAN MappedAsImage, USHORT Directory, PULONG Size) {
-	return ((decltype(&RtlImageDirectoryEntryToData))RtlGetNtProcAddress("RtlImageDirectoryEntryToData"))(BaseAddress, MappedAsImage, Directory, Size);
+PVOID NTAPI RtlImageDirectoryEntryToData(PVOID BaseAddress, BOOLEAN MappedAsImage, USHORT Directory, PULONG Size) {
+	return ((decltype(&RtlImageDirectoryEntryToData))(RtlGetNtProcAddress("RtlImageDirectoryEntryToData")))(BaseAddress, MappedAsImage, Directory, Size);
 }
 
-VOID RtlInitAnsiString(PANSI_STRING DestinationString, LPCSTR SourceString) {
+VOID NTAPI RtlInitAnsiString(PANSI_STRING DestinationString, LPCSTR SourceString) {
 	return ((decltype(&RtlInitAnsiString))RtlGetNtProcAddress("RtlInitAnsiString"))(DestinationString, SourceString);
 }
 
-NTSTATUS RtlAnsiStringToUnicodeString(PUNICODE_STRING DestinationString, PANSI_STRING SourceString, BOOLEAN AllocateDestinationString) {
+NTSTATUS NTAPI RtlAnsiStringToUnicodeString(PUNICODE_STRING DestinationString, PANSI_STRING SourceString, BOOLEAN AllocateDestinationString) {
 	return ((decltype(&RtlAnsiStringToUnicodeString))RtlGetNtProcAddress("RtlAnsiStringToUnicodeString"))(DestinationString, SourceString, AllocateDestinationString);
 }
 
@@ -339,9 +339,9 @@ NTSTATUS NTAPI RtlHashUnicodeString(IN PCUNICODE_STRING String, IN BOOLEAN CaseI
 	return (decltype(&RtlHashUnicodeString)(RtlGetNtProcAddress("RtlHashUnicodeString")))(String, CaseInSensitive, HashAlgorithm, HashValue);
 }
 
-VOID RtlGetNtVersionNumbers(OUT DWORD* MajorVersion, OUT DWORD* MinorVersion, OUT DWORD* BuildNumber) {
+VOID NTAPI RtlGetNtVersionNumbers(OUT DWORD* MajorVersion, OUT DWORD* MinorVersion, OUT DWORD* BuildNumber) {
 	static DWORD Versions[3]{ 0 };
-	static auto _RtlGetNtVersionNumbers = (decltype(&RtlGetNtVersionNumbers))RtlGetNtProcAddress("RtlGetNtVersionNumbers");
+	static auto _RtlGetNtVersionNumbers = (decltype(&RtlGetNtVersionNumbers))(RtlGetNtProcAddress("RtlGetNtVersionNumbers"));
 
 	if (Versions[0] || !_RtlGetNtVersionNumbers) goto ret;
 	_RtlGetNtVersionNumbers(Versions, Versions + 1, Versions + 2);
@@ -358,3 +358,9 @@ NTSTATUS NTAPI NtQuerySystemTime(PLARGE_INTEGER SystemTime) {
 	return (decltype(&NtQuerySystemTime)(RtlGetNtProcAddress("NtQuerySystemTime")))(SystemTime);
 }
 
+PVOID NTAPI RtlEncodeSystemPointer(PVOID Pointer) {
+	return decltype(&RtlEncodeSystemPointer)(RtlGetNtProcAddress("RtlEncodeSystemPointer"))(Pointer);
+}
+PVOID NTAPI RtlDecodeSystemPointer(PVOID Pointer) {
+	return decltype(&RtlDecodeSystemPointer)(RtlGetNtProcAddress("RtlDecodeSystemPointer"))(Pointer);
+}

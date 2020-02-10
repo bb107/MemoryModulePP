@@ -6,8 +6,21 @@
 #include <cstdio>
 #pragma warning(disable:4996)
 
+//void TravelInvertedFunctionTable() {
+//    PRTL_INVERTED_FUNCTION_TABLE tab = decltype(tab)(0x770D2200);
+//    DWORD t = 0, tt = t;
+//    DWORD s = 0;
+//    for (DWORD i = 0; i < tab->Count; ++i) {
+//        PVOID exc = RtlDecodeSystemPointer(i ? tab->Entries[i - 1].NextEntrySEHandlerTableEncoded : (PVOID)&tab->NextEntrySEHandlerTableEncoded);
+//        RtlCaptureImageExceptionValues(tab->Entries[i].ImageBase, &t, &s);
+//        tt = (DWORD)RtlEncodeSystemPointer((PVOID)t);
+//        tab->Entries[i].ImageSize;
+//        i = i;
+//    }
+//}
+
 int main() {
-    //GetProcAddress(LoadLibraryA("a.dll"), "thread")();
+    //TravelInvertedFunctionTable();
     LPVOID buffer;
     size_t size;
     FILE* f = fopen("a.dll", "rb");
@@ -27,14 +40,34 @@ int main() {
     FARPROC test = nullptr;
     typedef int(*_exception)(int type);
     _exception exception = nullptr;
+    PWSTR t;
+    DWORD tableSize;
+    DWORD offset = 0, index = 0;
+    HRSRC res;
+    HGLOBAL hRes;
+    PWSTR str;
     
     if (!NT_SUCCESS(NtLoadDllMemoryExW(&m1, nullptr, 0, buffer, size, L"kernel64", nullptr))) goto end;
     //if (!NT_SUCCESS(NtLoadDllMemoryExW(&_m1, nullptr, 0, buffer, size, L"kernel64.dll", nullptr))) goto end;
     //if (!NT_SUCCESS(NtLoadDllMemoryExW(&m2, nullptr, 0, buffer, size, L"kernel128.dll", L"\\?\\kernel512.dll"))) goto end;
 
-    char t[100];
-    LoadStringA((HINSTANCE)m1, 101, t, 100);
-    printf("%s\n", t);
+    //Load string using FindResource
+    hModule = (HMODULE)m1;
+    if (!(res = FindResourceW(hModule, MAKEINTRESOURCEW((101 >> 4) + 1), MAKEINTRESOURCEW(6))))goto end;
+    if (!(hRes = LoadResource(hModule, res)))goto end;
+    if (!(t = (PWSTR)LockResource(hRes)))goto end;
+    tableSize = SizeofResource(hModule, res);
+    while (offset < tableSize) {
+        if (index == 101 % 0x10) {
+            if (t[offset] != 0x0000) {
+                str = &t[offset + 1];
+                wprintf(L"Size = %d, String = %s\n", t[offset], str);
+            }
+            break;
+        }
+        offset += t[offset] + 1;
+        index++;
+    }
     
     hModule = GetModuleHandleA("kernel64.dll");
     GetModuleFileNameA(hModule, name, MAX_PATH);

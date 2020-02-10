@@ -3,6 +3,15 @@
 #pragma warning(disable:6328)
 #pragma warning(disable:4267)
 #pragma warning(disable:26812)
+#ifndef _WIN64
+SIZE_T NTAPI _RtlCompareMemory(
+	const VOID* Source1,
+	const VOID* Source2,
+	SIZE_T     Length) {
+	return decltype(&_RtlCompareMemory)(RtlGetNtProcAddress("RtlCompareMemory"))(Source1, Source2, Length);
+}
+#define RtlCompareMemory _RtlCompareMemory
+#endif
 
 #define RTL_VERIFY_FLAGS_MAJOR_VERSION	0
 #define RTL_VERIFY_FLAGS_MINOR_VERSION	1
@@ -660,7 +669,7 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS NtLoadDllMemoryExA(
+NTSTATUS NTAPI NtLoadDllMemoryExA(
 	OUT HMEMORYMODULE* BaseAddress,
 	OUT PVOID* LdrEntry OPTIONAL,
 	IN DWORD dwFlags,
@@ -751,9 +760,10 @@ VOID NTAPI RtlRbRemoveNode(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Node) {
 }
 
 static VOID NTAPI RtlpInsertInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABLE InvertedTable, IN PVOID ImageBase, IN ULONG SizeOfImage) {
+#ifdef _WIN64
 	ULONG CurrentSize;
-	PRUNTIME_FUNCTION FunctionTable;
-	ULONG Index = 1;
+	PIMAGE_RUNTIME_FUNCTION_ENTRY FunctionTable;
+	ULONG Index;
 	ULONG SizeOfTable = 0;
 	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(ImageBase);
 	PIMAGE_DATA_DIRECTORY dir = &headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
@@ -762,13 +772,9 @@ static VOID NTAPI RtlpInsertInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 	Index = (ULONG)need;
 	CurrentSize = InvertedTable->Count;
 	if (CurrentSize != InvertedTable->MaxCount) {
-		if (need)_InterlockedIncrement(&InvertedTable->Epoch);
+		//if (need)_InterlockedIncrement(&InvertedTable->Epoch);
 		if (CurrentSize != 0) {
-			for (Index = 1; Index < CurrentSize; ++Index) {
-				if (ImageBase < InvertedTable->Entries[Index].ImageBase) {
-					break;
-				}
-			}
+			while (Index < CurrentSize)if (ImageBase < InvertedTable->Entries[Index].ImageBase)break;
 
 			if (Index != CurrentSize) {
 				RtlMoveMemory(&InvertedTable->Entries[Index + 1],
@@ -788,18 +794,44 @@ static VOID NTAPI RtlpInsertInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 		InvertedTable->Entries[Index].ImageSize = SizeOfImage;
 		InvertedTable->Entries[Index].ExceptionDirectorySize = SizeOfTable;
 		InvertedTable->Count++;
-		if (need)_InterlockedIncrement(&InvertedTable->Epoch);
+		//if (need)_InterlockedIncrement(&InvertedTable->Epoch);
 	}
 	else {
 		need ? (InvertedTable->Overflow = TRUE) : (InvertedTable->Epoch = TRUE);
 	}
 
+#else
+	DWORD ptr, count;
+	ULONG Index = RtlIsWindowsVersionOrGreater(10, 0, 0) ? 1 : 0;
+
+	if (InvertedTable->Count == InvertedTable->MaxCount) {
+		InvertedTable->Overflow = TRUE;
+		return;
+	}
+	while (Index < InvertedTable->Count) {
+		if (ImageBase < InvertedTable->Entries[Index].ImageBase)break;
+		Index++;
+	}
+	if (Index != InvertedTable->Count) {
+		RtlMoveMemory(&InvertedTable->Entries[Index].NextEntrySEHandlerTableEncoded,
+			Index ? &InvertedTable->Entries[Index - 1].NextEntrySEHandlerTableEncoded : (PVOID)&InvertedTable->NextEntrySEHandlerTableEncoded,
+			(InvertedTable->Count - Index) * sizeof(RTL_INVERTED_FUNCTION_TABLE_ENTRY));
+	}
+
+	RtlCaptureImageExceptionValues(ImageBase, &ptr, &count);
+	if (Index) InvertedTable->Entries[Index - 1].NextEntrySEHandlerTableEncoded = RtlEncodeSystemPointer((PVOID)ptr);
+	else InvertedTable->NextEntrySEHandlerTableEncoded = (DWORD)RtlEncodeSystemPointer((PVOID)ptr);
+	InvertedTable->Entries[Index].ImageBase = ImageBase;
+	InvertedTable->Entries[Index].ImageSize = SizeOfImage;
+	InvertedTable->Entries[Index].SEHandlerCount = count;
+	++InvertedTable->Count;
+#endif
 	return;
 }
 static VOID NTAPI RtlpRemoveInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABLE InvertedTable, IN PVOID ImageBase) {
 	ULONG CurrentSize;
 	ULONG Index;
-	bool need = RtlIsWindowsVersionOrGreater(6, 2, 0);
+	//bool need = RtlIsWindowsVersionOrGreater(6, 2, 0);
 
 	CurrentSize = InvertedTable->Count;
 	for (Index = 0; Index < CurrentSize; Index += 1) {
@@ -809,40 +841,61 @@ static VOID NTAPI RtlpRemoveInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 	}
 
 	if (Index != CurrentSize) {
-		if (need)_InterlockedIncrement(&InvertedTable->Epoch);
+		//if (need)_InterlockedIncrement(&InvertedTable->Epoch);
 		if (CurrentSize != 1) {
+#ifdef _WIN64
 			RtlMoveMemory(&InvertedTable->Entries[Index],
 				&InvertedTable->Entries[Index + 1],
 				(CurrentSize - Index - 1) * sizeof(RTL_INVERTED_FUNCTION_TABLE_ENTRY));
+#else
+			RtlMoveMemory(
+				Index ? &InvertedTable->Entries[Index - 1].NextEntrySEHandlerTableEncoded : (PVOID)&InvertedTable->NextEntrySEHandlerTableEncoded,
+				&InvertedTable->Entries[Index].NextEntrySEHandlerTableEncoded,
+				(CurrentSize - Index) * sizeof(PRTL_INVERTED_FUNCTION_TABLE_ENTRY));
+#endif
 		}
-		InvertedTable->Count -= 1;
-		if (need)_InterlockedIncrement(&InvertedTable->Epoch);
+		InvertedTable->Count--;
+		//if (need)_InterlockedIncrement(&InvertedTable->Epoch);
 	}
 
 	return;
 }
 
-static PVOID NTAPI RtlFindLdrpInvertedFunctionTable() {
+PVOID NTAPI RtlFindLdrpInvertedFunctionTable() {
 	static PVOID LdrpInvertedFunctionTable = nullptr;
 	if (LdrpInvertedFunctionTable)return LdrpInvertedFunctionTable;
 
-	// _RTL_INVERTED_FUNCTION_TABLE						x64		x86
-	//		Count										+0x0	+0x0	????????
-	//		MaxCount									+0x4	+0x4	0x00000200
-	//		Epoch										+0x8	+0x8	????????
-	//		OverFlow									+0xc	+0xc	0x00000000
-	// _RTL_INVERTED_FUNCTION_TABLE_ENTRY[0]			+0x10	+0x10	ntdll.dll(win10) or The smallest base module
-	//		ExceptionDirectory							+0x10	+0x10	++++++++
-	//		ImageBase									+0x18	+0x14	++++++++
-	//		ImageSize									+0x20	+0x18	++++++++
-	//		ExceptionDirectorySize						+0x24	+0x1c	++++++++
-	//	_RTL_INVERTED_FUNCTION_TABLE_ENTRY[1] ...		...		...
+	//x68
+	// _RTL_INVERTED_FUNCTION_TABLE						x86
+	//		Count										+0x0	????????
+	//		MaxCount									+0x4	0x00000200
+	//		Overflow									+0x8	0x00000000
+	//		NextEntrySEHandlerTableEncoded				+0xc	++++++++
+	// _RTL_INVERTED_FUNCTION_TABLE_ENTRY[0]			+0x10	ntdll.dll(win10) or The smallest base module
+	//		ImageBase									+0x10	++++++++
+	//		ImageSize									+0x14	++++++++
+	//		SEHandlerCount								+0x18	++++++++
+	//		NextEntrySEHandlerTableEncoded				+0x1c	++++++++
+	//	_RTL_INVERTED_FUNCTION_TABLE_ENTRY[1] ...		...
+	// ......
+
+	// x64
+	// _RTL_INVERTED_FUNCTION_TABLE						x64
+	//		Count										+0x0	????????
+	//		MaxCount									+0x4	0x00000200
+	//		Epoch										+0x8	????????
+	//		OverFlow									+0xc	0x00000000
+	// _RTL_INVERTED_FUNCTION_TABLE_ENTRY[0]			+0x10	ntdll.dll(win10) or The smallest base module
+	//		ExceptionDirectory							+0x10	++++++++
+	//		ImageBase									+0x18	++++++++
+	//		ImageSize									+0x20	++++++++
+	//		ExceptionDirectorySize						+0x24	++++++++
+	//	_RTL_INVERTED_FUNCTION_TABLE_ENTRY[1] ...		...
 	// ......
 
 	HMODULE hModule = nullptr, hNtdll = GetModuleHandleW(L"ntdll.dll");
 	PIMAGE_NT_HEADERS NtdllHeaders = RtlImageNtHeader(hNtdll), ModuleHeaders = nullptr;
 	_RTL_INVERTED_FUNCTION_TABLE_ENTRY entry{};
-	PIMAGE_DATA_DIRECTORY dir = nullptr;
 	LPCSTR lpSectionName = ".data";
 	PIMAGE_SECTION_HEADER section = nullptr;
 	struct _SEARCH_DATA {
@@ -880,11 +933,19 @@ static PVOID NTAPI RtlFindLdrpInvertedFunctionTable() {
 	}
 
 	if (!hModule || !ModuleHeaders || !hNtdll || !NtdllHeaders)return LdrpInvertedFunctionTable;
+#ifdef _WIN64
+	PIMAGE_DATA_DIRECTORY dir = nullptr;
 	dir = &ModuleHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
 	entry = {
 		dir->Size ? decltype(entry.ExceptionDirectory)((size_t)hModule + dir->VirtualAddress) : nullptr ,
 		(PVOID)hModule, ModuleHeaders->OptionalHeader.SizeOfImage,dir->Size
 	};
+#else
+	PVOID tmp = &ModuleHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG];
+	DWORD SEHTable, SEHCount;
+	RtlCaptureImageExceptionValues(hModule, &SEHTable, &SEHCount);
+	entry = { RtlEncodeSystemPointer((PVOID)SEHTable),(DWORD)hModule,ModuleHeaders->OptionalHeader.SizeOfImage,(PVOID)SEHCount };
+#endif
 	section = IMAGE_FIRST_SECTION(NtdllHeaders);
 	for (WORD i = 0; i < NtdllHeaders->FileHeader.NumberOfSections; ++i) {
 		if (!_stricmp(lpSectionName, (LPCSTR)section->Name)) {
@@ -897,6 +958,7 @@ static PVOID NTAPI RtlFindLdrpInvertedFunctionTable() {
 
 	while (data.Size && (data.Size - EntrySize)) {
 		if (RtlCompareMemory(data.BaseAddress, &entry, EntrySize) == EntrySize) {
+#ifdef _WIN64
 			PRTL_INVERTED_FUNCTION_TABLE tab = decltype(tab)((size_t)data.BaseAddress - 0x10);
 			if (RtlIsWindowsVersionOrGreater(6, 2, 0) && tab->MaxCount == 0x200 && !tab->Overflow) {
 				return LdrpInvertedFunctionTable = tab;
@@ -905,6 +967,21 @@ static PVOID NTAPI RtlFindLdrpInvertedFunctionTable() {
 				if (tab->MaxCount == 0x200 && !tab->Epoch)
 					return LdrpInvertedFunctionTable = tab;
 			}
+#else
+			PRTL_INVERTED_FUNCTION_TABLE tab = decltype(tab)((size_t)data.BaseAddress - 0xC);
+
+			//Does Windows 8 need fix?
+			if (RtlIsWindowsVersionOrGreater(10, 0, 0)) tab = decltype(tab)((DWORD)tab - 0x4);
+			
+			//Note: Same memory layout for RTL_INVERTED_FUNCTION_TABLE_ENTRY in Windows 10 x86 and x64.
+			if (RtlIsWindowsVersionOrGreater(6, 2, 0) && tab->MaxCount == 0x200 && !tab->NextEntrySEHandlerTableEncoded) {
+				return LdrpInvertedFunctionTable = tab;
+			}
+			else {
+				if (tab->MaxCount == 0x200 && !tab->Overflow)
+					return LdrpInvertedFunctionTable = tab;
+			}
+#endif
 		}
 		++data;
 		--data.Size;
@@ -949,8 +1026,12 @@ NTSTATUS NTAPI RtlInsertInvertedFunctionTable(IN PVOID BaseAddress, IN size_t Im
 		if (!NT_SUCCESS(status))return status;
 	}
 
+#ifdef _WIN64
 	if (RtlIsWindowsVersionOrGreater(6, 2, 0)) return table->Overflow ? STATUS_INVALID_ADDRESS : STATUS_SUCCESS;
 	else return table->Epoch ? STATUS_INVALID_ADDRESS : STATUS_SUCCESS;
+#else
+	return table->Overflow ? STATUS_INVALID_ADDRESS : STATUS_SUCCESS;
+#endif
 }
 NTSTATUS NTAPI RtlRemoveInvertedFunctionTable(IN PVOID ImageBase) {
 	static auto table = PRTL_INVERTED_FUNCTION_TABLE(RtlFindLdrpInvertedFunctionTable());
@@ -973,24 +1054,17 @@ NTSTATUS NTAPI RtlRemoveInvertedFunctionTable(IN PVOID ImageBase) {
 static NTSTATUS NTAPI LdrpHandleTlsDataXp(PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	return STATUS_NOT_SUPPORTED;
 }
-NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
-	typedef NTSTATUS(__thiscall* _PTR_WIN8_1)(PLDR_DATA_TABLE_ENTRY LdrEntry);
-	typedef NTSTATUS(__stdcall* _PTR_WIN)(PLDR_DATA_TABLE_ENTRY LdrEntry);
-	union _FUNCTION_SET {
-		_PTR_WIN8_1 Win8_1_OrGreater;
-		_PTR_WIN	Default;
-		_FUNCTION_SET() {
-			this->Default = nullptr;
-		}
-		operator bool() {
-			return this->Default != nullptr;
-		}
-	};
-	static _FUNCTION_SET _LdrpHandleTlsData{};
-	static bool stdcall = false;
-	if (_LdrpHandleTlsData)
-		return stdcall ? _LdrpHandleTlsData.Default(LdrEntry) : _LdrpHandleTlsData.Win8_1_OrGreater(LdrEntry);
-	
+static NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall) {
+	NTSTATUS status = STATUS_SUCCESS;
+	__try {
+		*_LdrpHandleTlsData = nullptr;
+		*stdcall = false;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = GetExceptionCode();
+	}
+	if (!NT_SUCCESS(status))return status;
+
 	DWORD Versions[3]{};
 	LPCVOID Feature = nullptr;
 	BYTE Size = 0;
@@ -1013,9 +1087,9 @@ NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 			else Feature = "\x8b\xc1\x8d\x4d\xac\x51";
 #ifdef _WIN64
 			//RS6(19H1)
-			if (Versions[2] >= 18362) OffsetOfFunctionBegin = 0x46;			
+			if (Versions[2] >= 18362) OffsetOfFunctionBegin = 0x46;
 			//RS4
-			else if (Versions[2] >= 17134) OffsetOfFunctionBegin = 0x44;			
+			else if (Versions[2] >= 17134) OffsetOfFunctionBegin = 0x44;
 			//RS3
 			else OffsetOfFunctionBegin = 0x43;
 #else
@@ -1045,7 +1119,7 @@ NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	}
 	case 6: {
 		switch (Versions[1]) {
-		//8.1
+			//8.1
 		case 3: {
 #ifdef _WIN64
 			Size = 10;
@@ -1058,7 +1132,7 @@ NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 #endif
 			break;
 		}
-		//8
+			  //8
 		case 2: {
 #ifdef _WIN64
 			Size = 9;
@@ -1071,7 +1145,7 @@ NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 #endif
 			break;
 		}
-		//7
+			  //7
 		case 1: {
 #ifdef _WIN64
 			Size = 12;
@@ -1088,25 +1162,86 @@ NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 		}
 		break;
 	}
-	
+
 	default: {
-		_LdrpHandleTlsData.Default = LdrpHandleTlsDataXp;
-		stdcall = true;
-		return LdrpHandleTlsDataXp(LdrEntry);
+		*_LdrpHandleTlsData = LdrpHandleTlsDataXp;
+		*stdcall = true;
+		return status;
 	}
 	}
 
 	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
 	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(ntdll);
 	if (!Feature || !headers)return STATUS_NOT_SUPPORTED;
+	ntdll = (HMODULE)(headers->OptionalHeader.ImageBase + headers->OptionalHeader.BaseOfCode);
 	Size--;
-	for (size_t i = 0; i < headers->OptionalHeader.SizeOfCode - Size; ++i) {
-		if (RtlCompareMemory((PBYTE)ntdll + i, Feature, Size) == Size) {
-			_LdrpHandleTlsData.Default = (_PTR_WIN)((PBYTE)ntdll + i - OffsetOfFunctionBegin);
-			break;
+	__try {
+		for (size_t i = 0; i < headers->OptionalHeader.SizeOfCode - Size; ++i) {
+			if (RtlCompareMemory((PBYTE)ntdll + i, Feature, Size) == Size) {
+				*_LdrpHandleTlsData = ((PBYTE)ntdll + i - OffsetOfFunctionBegin);
+				break;
+			}
 		}
 	}
-	if (!_LdrpHandleTlsData)return STATUS_NOT_SUPPORTED;
-	stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = GetExceptionCode();
+	}
+	if (!NT_SUCCESS(status))return status;
+	if (!*_LdrpHandleTlsData)return STATUS_NOT_SUPPORTED;
+	*stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
+	return status;
+}
+NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
+	typedef NTSTATUS(__thiscall* _PTR_WIN8_1)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+	typedef NTSTATUS(__stdcall* _PTR_WIN)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+	union _FUNCTION_SET {
+		_PTR_WIN8_1 Win8_1_OrGreater;
+		_PTR_WIN	Default;
+		_FUNCTION_SET() {
+			this->Default = nullptr;
+		}
+		operator bool() {
+			return this->Default != nullptr;
+		}
+	};
+	static _FUNCTION_SET _LdrpHandleTlsData{};
+	static bool stdcall = false;
+	NTSTATUS status;
+	if (!_LdrpHandleTlsData) {
+		status = RtlFindLdrpHandleTlsData((PVOID*)&_LdrpHandleTlsData.Default, &stdcall);
+		if (!NT_SUCCESS(status))return status;
+	}
 	return stdcall ? _LdrpHandleTlsData.Default(LdrEntry) : _LdrpHandleTlsData.Win8_1_OrGreater(LdrEntry);
 }
+
+int NTAPI RtlCaptureImageExceptionValues(PVOID BaseAddress, PDWORD SEHandlerTable, PDWORD SEHandlerCount) {
+	PIMAGE_LOAD_CONFIG_DIRECTORY pLoadConfigDirectory;
+	PIMAGE_COR20_HEADER pCor20;
+	ULONG Size;
+
+	//check if no seh
+	if (RtlImageNtHeader(BaseAddress)->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NO_SEH) {
+		*SEHandlerTable = *SEHandlerCount = -1;
+		return 0;
+	}
+
+	//get seh table and count
+	pLoadConfigDirectory = (decltype(pLoadConfigDirectory))RtlImageDirectoryEntryToData(BaseAddress, TRUE, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, &Size);
+	if (pLoadConfigDirectory) {
+		if (Size == 0x40 && pLoadConfigDirectory->Size >= 0x48u) {
+			if (pLoadConfigDirectory->SEHandlerTable && pLoadConfigDirectory->SEHandlerCount) {
+				*SEHandlerTable = pLoadConfigDirectory->SEHandlerTable;
+				return *SEHandlerCount = pLoadConfigDirectory->SEHandlerCount;
+			}
+		}
+	}
+
+	//is .net core ?
+	pCor20 = (decltype(pCor20))RtlImageDirectoryEntryToData(BaseAddress, TRUE, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR, &Size);
+	*SEHandlerTable = *SEHandlerCount = ((pCor20 && pCor20->Flags & 1) ? -1 : 0);
+	return 0;
+}
+
+#ifndef _WIN64
+#undef RtlCompareMemory
+#endif
