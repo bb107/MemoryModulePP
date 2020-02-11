@@ -6,21 +6,7 @@
 #include <cstdio>
 #pragma warning(disable:4996)
 
-//void TravelInvertedFunctionTable() {
-//    PRTL_INVERTED_FUNCTION_TABLE tab = decltype(tab)(0x770D2200);
-//    DWORD t = 0, tt = t;
-//    DWORD s = 0;
-//    for (DWORD i = 0; i < tab->Count; ++i) {
-//        PVOID exc = RtlDecodeSystemPointer(i ? tab->Entries[i - 1].NextEntrySEHandlerTableEncoded : (PVOID)&tab->NextEntrySEHandlerTableEncoded);
-//        RtlCaptureImageExceptionValues(tab->Entries[i].ImageBase, &t, &s);
-//        tt = (DWORD)RtlEncodeSystemPointer((PVOID)t);
-//        tab->Entries[i].ImageSize;
-//        i = i;
-//    }
-//}
-
 int main() {
-    //TravelInvertedFunctionTable();
     LPVOID buffer;
     size_t size;
     FILE* f = fopen("a.dll", "rb");
@@ -53,27 +39,27 @@ int main() {
 
     //Load string using FindResource
     hModule = (HMODULE)m1;
-    if (!(res = FindResourceW(hModule, MAKEINTRESOURCEW((101 >> 4) + 1), MAKEINTRESOURCEW(6))))goto end;
-    if (!(hRes = LoadResource(hModule, res)))goto end;
-    if (!(t = (PWSTR)LockResource(hRes)))goto end;
-    tableSize = SizeofResource(hModule, res);
-    while (offset < tableSize) {
-        if (index == 101 % 0x10) {
-            if (t[offset] != 0x0000) {
-                str = &t[offset + 1];
-                wprintf(L"Size = %d, String = %s\n", t[offset], str);
-            }
-            break;
-        }
-        offset += t[offset] + 1;
-        index++;
-    }
-    
-    hModule = GetModuleHandleA("kernel64.dll");
-    GetModuleFileNameA(hModule, name, MAX_PATH);
-    if (hModule)test = GetProcAddress(hModule, "thread");
-    printf("m1:\n\tHMEMORYMODULE\t= 0x%p\n\tHMODULE\t\t= 0x%p\n\tModuleFileName\t= %s\n\ttest\t\t= 0x%p\n\n", m1, hModule, name, test);
-    if (test) test();
+    //if (!(res = FindResourceW(hModule, MAKEINTRESOURCEW((101 >> 4) + 1), MAKEINTRESOURCEW(6))))goto end;
+    //if (!(hRes = LoadResource(hModule, res)))goto end;
+    //if (!(t = (PWSTR)LockResource(hRes)))goto end;
+    //tableSize = SizeofResource(hModule, res);
+    //while (offset < tableSize) {
+    //    if (index == 101 % 0x10) {
+    //        if (t[offset] != 0x0000) {
+    //            str = &t[offset + 1];
+    //            wprintf(L"Size = %d, String = %s\n", t[offset], str);
+    //        }
+    //        break;
+    //    }
+    //    offset += t[offset] + 1;
+    //    index++;
+    //}
+    //
+    //hModule = GetModuleHandleA("kernel64.dll");
+    //GetModuleFileNameA(hModule, name, MAX_PATH);
+    //if (hModule)test = GetProcAddress(hModule, "thread");
+    //printf("m1:\n\tHMEMORYMODULE\t= 0x%p\n\tHMODULE\t\t= 0x%p\n\tModuleFileName\t= %s\n\ttest\t\t= 0x%p\n\n", m1, hModule, name, test);
+    //if (test) test();
     
     //GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)test, &hModule);
     //GetModuleFileNameA(hModule, name, MAX_PATH);
@@ -83,14 +69,15 @@ int main() {
 
     //hModule = GetModuleHandleA("kernel128");
     //GetModuleFileNameA(hModule, name, MAX_PATH);
-    //if (hModule)exception = (_exception)GetProcAddress(hModule, "exception");
+    if (hModule)exception = (_exception)GetProcAddress(hModule, "exception");
     //printf("m2:\n\tHMEMORYMODULE\t= 0x%p\n\tHMODULE\t\t= 0x%p\n\tModuleFileName\t= %s\n\ttest\t\t= 0x%p\n\n", m2, hModule, name, test);
-    //if (exception) {
-    //    exception(0);
-    //    exception(1);
-    //    exception(2);
-    //    exception(3);
-    //}
+    if (exception) {
+        DebugBreak();
+        exception(0);
+        exception(1);
+        exception(2);
+        exception(3);
+    }
 
 end:
     delete[]buffer;
