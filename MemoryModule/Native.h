@@ -372,6 +372,60 @@ typedef enum _PROCESSINFOCLASS {
 	ProcessLeapSecondInformation, // PROCESS_LEAP_SECOND_INFORMATION
 	MaxProcessInfoClass
 } PROCESSINFOCLASS;
+typedef enum _THREADINFOCLASS {
+	ThreadBasicInformation, // q: THREAD_BASIC_INFORMATION
+	ThreadTimes, // q: KERNEL_USER_TIMES
+	ThreadPriority, // s: KPRIORITY
+	ThreadBasePriority, // s: LONG
+	ThreadAffinityMask, // s: KAFFINITY
+	ThreadImpersonationToken, // s: HANDLE
+	ThreadDescriptorTableEntry, // q: DESCRIPTOR_TABLE_ENTRY (or WOW64_DESCRIPTOR_TABLE_ENTRY)
+	ThreadEnableAlignmentFaultFixup, // s: BOOLEAN
+	ThreadEventPair,
+	ThreadQuerySetWin32StartAddress, // q: PVOID
+	ThreadZeroTlsCell, // 10
+	ThreadPerformanceCount, // q: LARGE_INTEGER
+	ThreadAmILastThread, // q: ULONG
+	ThreadIdealProcessor, // s: ULONG
+	ThreadPriorityBoost, // qs: ULONG
+	ThreadSetTlsArrayAddress,
+	ThreadIsIoPending, // q: ULONG
+	ThreadHideFromDebugger, // s: void
+	ThreadBreakOnTermination, // qs: ULONG
+	ThreadSwitchLegacyState,
+	ThreadIsTerminated, // q: ULONG // 20
+	ThreadLastSystemCall, // q: THREAD_LAST_SYSCALL_INFORMATION
+	ThreadIoPriority, // qs: IO_PRIORITY_HINT
+	ThreadCycleTime, // q: THREAD_CYCLE_TIME_INFORMATION
+	ThreadPagePriority, // q: ULONG
+	ThreadActualBasePriority,
+	ThreadTebInformation, // q: THREAD_TEB_INFORMATION (requires THREAD_GET_CONTEXT + THREAD_SET_CONTEXT)
+	ThreadCSwitchMon,
+	ThreadCSwitchPmu,
+	ThreadWow64Context, // q: WOW64_CONTEXT
+	ThreadGroupInformation, // q: GROUP_AFFINITY // 30
+	ThreadUmsInformation, // q: THREAD_UMS_INFORMATION
+	ThreadCounterProfiling,
+	ThreadIdealProcessorEx, // q: PROCESSOR_NUMBER
+	ThreadCpuAccountingInformation, // since WIN8
+	ThreadSuspendCount, // since WINBLUE
+	ThreadHeterogeneousCpuPolicy, // q: KHETERO_CPU_POLICY // since THRESHOLD
+	ThreadContainerId, // q: GUID
+	ThreadNameInformation, // qs: THREAD_NAME_INFORMATION
+	ThreadSelectedCpuSets,
+	ThreadSystemThreadInformation, // q: SYSTEM_THREAD_INFORMATION // 40
+	ThreadActualGroupAffinity, // since THRESHOLD2
+	ThreadDynamicCodePolicyInfo,
+	ThreadExplicitCaseSensitivity, // qs: ULONG; s: 0 disables, otherwise enables
+	ThreadWorkOnBehalfTicket,
+	ThreadSubsystemInformation, // q: SUBSYSTEM_INFORMATION_TYPE // since REDSTONE2
+	ThreadDbgkWerReportActive,
+	ThreadAttachContainer,
+	ThreadManageWritesToExecutableMemory, // MANAGE_WRITES_TO_EXECUTABLE_MEMORY // since REDSTONE3
+	ThreadPowerThrottlingState, // THREAD_POWER_THROTTLING_STATE
+	ThreadWorkloadClass, // THREAD_WORKLOAD_CLASS // since REDSTONE5 // 50
+	MaxThreadInfoClass
+} THREADINFOCLASS;
 typedef struct _SYSTEM_PROCESS {
 	ULONG NextEntryOffset;//relative offset
 	ULONG ThreadCount;
@@ -998,6 +1052,13 @@ typedef struct _SECURITY__LOGON_SESSION_DATA {
 	LARGE_INTEGER PasswordMustChange;
 }SECURITY_LOGON_SESSION_DATA, *PSECURITY_LOGON_SESSION_DATA,
 LOGON_SESSION_DATA, *PLOGON_SESSION_DATA;
+typedef struct _INITIAL_TEB {
+	PVOID                StackBase;
+	PVOID                StackLimit;
+	PVOID                StackCommit;
+	PVOID                StackCommitMax;
+	PVOID                StackReserved;
+} INITIAL_TEB, * PINITIAL_TEB;
 
 NTSTATUS NTAPI NtQueryObject(
 	IN HANDLE               ObjectHandle,
@@ -1340,3 +1401,23 @@ typedef struct _UNWIND_INFO {
 NTSTATUS NTAPI NtQuerySystemTime(PLARGE_INTEGER SystemTime);
 PVOID NTAPI RtlEncodeSystemPointer(PVOID Pointer);
 PVOID NTAPI RtlDecodeSystemPointer(PVOID Pointer);
+
+#define NtCurrentProcess()	(HANDLE)-1
+#define NtCurrentThread()	(HANDLE)-2
+
+BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
+#define ProbeForRead(pBuffer, size)			VirtualAccessCheck(pBuffer, size, PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)
+#define ProbeForWrite(pBuffer, size)		VirtualAccessCheck(pBuffer, size, PAGE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)
+#define ProbeForReadWrite(pBuffer, size)	VirtualAccessCheck(pBuffer, size, PAGE_EXECUTE_READWRITE | PAGE_READWRITE)
+#define ProbeForExecute(pBuffer, size)		VirtualAccessCheck(pBuffer, size, PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
+
+//Flags
+#define LOCK_RAISE_EXCEPTION 1
+#define LOCK_NO_WAIT_IF_BUSY 2
+//State
+#define LOCK_STATE_NO_ENTER  0
+#define LOCK_STATE_ENTERED   1
+#define LOCK_STATE_LOCK_BUSY 2
+NTSTATUS NTAPI LdrLockLoaderLock(size_t Flags, size_t* State, size_t* Cookie);
+NTSTATUS NTAPI LdrUnlockLoaderLock(size_t Flags, size_t Cookie);
+NTSTATUS NTAPI LdrUnloadDll(IN HANDLE ModuleHandle);

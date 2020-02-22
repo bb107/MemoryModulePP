@@ -364,3 +364,24 @@ PVOID NTAPI RtlEncodeSystemPointer(PVOID Pointer) {
 PVOID NTAPI RtlDecodeSystemPointer(PVOID Pointer) {
 	return decltype(&RtlDecodeSystemPointer)(RtlGetNtProcAddress("RtlDecodeSystemPointer"))(Pointer);
 }
+
+BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK protect) {
+	MEMORY_BASIC_INFORMATION mbi{};
+	SIZE_T len = 0;
+	if (!NT_SUCCESS(NtQueryVirtualMemory(NtCurrentProcess(), const_cast<PVOID>(pBuffer), MemoryBasicInformation, &mbi, sizeof(mbi), &len)) ||
+		!(mbi.Protect & protect)) {
+		RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
+		return FALSE;
+	}
+	return TRUE;
+}
+
+NTSTATUS NTAPI LdrLockLoaderLock(size_t Flags, size_t* State, size_t* Cookie) {
+	return (decltype(&LdrLockLoaderLock)(RtlGetNtProcAddress("LdrLockLoaderLock")))(Flags, State, Cookie);
+}
+NTSTATUS NTAPI LdrUnlockLoaderLock(size_t Flags, size_t Cookie) {
+	return (decltype(&LdrUnlockLoaderLock)(RtlGetNtProcAddress("LdrUnlockLoaderLock")))(Flags, Cookie);
+}
+NTSTATUS NTAPI LdrUnloadDll(IN HANDLE ModuleHandle) {
+	return (decltype(&LdrUnloadDll)(RtlGetNtProcAddress("LdrUnloadDll")))(ModuleHandle);
+}

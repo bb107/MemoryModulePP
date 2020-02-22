@@ -5,7 +5,16 @@
 #endif
 #include <cstdio>
 #pragma warning(disable:4996)
-
+PLDR_DATA_TABLE_ENTRY_WIN10_2 RtlFindDllLdrEntry(LPCWSTR DllName) {
+    PLIST_ENTRY head = &NtCurrentPeb()->Ldr->InMemoryOrderModuleList, entry = head->Flink;
+    PLDR_DATA_TABLE_ENTRY_WIN10_2 cur = nullptr;
+    while (entry != head) {
+        cur = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY_WIN10_2, InMemoryOrderLinks);
+        entry = entry->Flink;
+        if (!wcsicmp(DllName, cur->BaseDllName.Buffer))return cur;
+    }
+    return nullptr;
+}
 int main() {
     LPVOID buffer;
     size_t size;
@@ -19,71 +28,25 @@ int main() {
     _fseeki64(f, 0, SEEK_SET);
     fread(buffer = new char[size], 1, size, f);
     fclose(f);
-    
-    HMEMORYMODULE m1 = nullptr, m2 = m1, _m1 = m1;
-    char name[MAX_PATH]{};
+
+    HMEMORYMODULE m1 = nullptr, m2 = m1;
     HMODULE hModule = nullptr;
-    FARPROC test = nullptr;
-    typedef int(*_exception)(int type);
-    _exception exception = nullptr;
-    PWSTR t;
-    DWORD tableSize;
-    DWORD offset = 0, index = 0;
-    HRSRC res;
-    HGLOBAL hRes;
-    PWSTR str;
-    
+    FARPROC pfn = nullptr;
+
     if (!NT_SUCCESS(NtLoadDllMemoryExW(&m1, nullptr, 0, buffer, size, L"kernel64", nullptr))) goto end;
-    //if (!NT_SUCCESS(NtLoadDllMemoryExW(&_m1, nullptr, 0, buffer, size, L"kernel64.dll", nullptr))) goto end;
-    //if (!NT_SUCCESS(NtLoadDllMemoryExW(&m2, nullptr, 0, buffer, size, L"kernel128.dll", L"\\?\\kernel512.dll"))) goto end;
-
-    //Load string using FindResource
+    if (!NT_SUCCESS(NtLoadDllMemoryExW(&m2, nullptr, 0, buffer, size, L"kernel128", nullptr))) goto end;
     hModule = (HMODULE)m1;
-    //if (!(res = FindResourceW(hModule, MAKEINTRESOURCEW((101 >> 4) + 1), MAKEINTRESOURCEW(6))))goto end;
-    //if (!(hRes = LoadResource(hModule, res)))goto end;
-    //if (!(t = (PWSTR)LockResource(hRes)))goto end;
-    //tableSize = SizeofResource(hModule, res);
-    //while (offset < tableSize) {
-    //    if (index == 101 % 0x10) {
-    //        if (t[offset] != 0x0000) {
-    //            str = &t[offset + 1];
-    //            wprintf(L"Size = %d, String = %s\n", t[offset], str);
-    //        }
-    //        break;
-    //    }
-    //    offset += t[offset] + 1;
-    //    index++;
-    //}
-    //
-    //hModule = GetModuleHandleA("kernel64.dll");
-    //GetModuleFileNameA(hModule, name, MAX_PATH);
-    //if (hModule)test = GetProcAddress(hModule, "thread");
-    //printf("m1:\n\tHMEMORYMODULE\t= 0x%p\n\tHMODULE\t\t= 0x%p\n\tModuleFileName\t= %s\n\ttest\t\t= 0x%p\n\n", m1, hModule, name, test);
-    //if (test) test();
-    
-    //GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)test, &hModule);
-    //GetModuleFileNameA(hModule, name, MAX_PATH);
-    //test = GetProcAddress(hModule, "test");
-    //printf("_m1:\n\tHMEMORYMODULE\t= 0x%p\n\tHMODULE\t\t= 0x%p\n\tModuleFileName\t= %s\n\ttest\t\t= 0x%p\n\n", _m1, hModule, name, test);
-    //if (test)test();
-
-    //hModule = GetModuleHandleA("kernel128");
-    //GetModuleFileNameA(hModule, name, MAX_PATH);
-    if (hModule)exception = (_exception)GetProcAddress(hModule, "exception");
-    //printf("m2:\n\tHMEMORYMODULE\t= 0x%p\n\tHMODULE\t\t= 0x%p\n\tModuleFileName\t= %s\n\ttest\t\t= 0x%p\n\n", m2, hModule, name, test);
-    if (exception) {
-        DebugBreak();
-        exception(0);
-        exception(1);
-        exception(2);
-        exception(3);
-    }
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket")); //ws2_32.WSASocketW
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "VerifyTruse")); //wintrust.WinVerifyTrust
+    hModule = (HMODULE)m2;
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket"));
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "VerifyTruse"));
+    printf("pfn = %p\n", pfn);
 
 end:
     delete[]buffer;
     if (m1)NtUnloadDllMemory(m1);
-    //if (_m1)NtUnloadDllMemory(_m1);
-    //if (m2)NtUnloadDllMemory(m2);
+    if (m2)NtUnloadDllMemory(m2);
     return 0;
 }
 

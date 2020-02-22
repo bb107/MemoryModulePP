@@ -81,7 +81,14 @@ struct _LDR_SERVICE_TAG_RECORD {
 };
 //0x8 bytes (sizeof)
 struct _LDRP_CSLIST {
-	_SINGLE_LIST_ENTRY* Tail;                                        //0x0
+	struct _LDRP_CSLIST_DEPENDENT {
+		_SINGLE_LIST_ENTRY* NextDependentEntry;                                        //0x0
+		struct _LDR_DDAG_NODE* DependentDdagNode;
+	}Dependent;
+	struct _LDRP_CSLIST_INCOMMING {
+		_SINGLE_LIST_ENTRY* NextIncommingEntry;
+		struct _LDR_DDAG_NODE* IncommingDdagNode;
+	}Incomming;
 };
 //0x4 bytes (sizeof)
 enum _LDR_DDAG_STATE {
@@ -108,8 +115,8 @@ struct _LDR_DDAG_NODE {
 	ULONG LoadCount;                                                        //0x18
 	ULONG LoadWhileUnloadingCount;                                          //0x1c
 	ULONG LowestLink;                                                       //0x20
-	_LDRP_CSLIST Dependencies;												//0x28
-	_LDRP_CSLIST IncomingDependencies;										//0x30
+	_LDRP_CSLIST::_LDRP_CSLIST_DEPENDENT* Dependencies;						//0x28
+	_LDRP_CSLIST::_LDRP_CSLIST_INCOMMING* IncomingDependencies;				//0x30
 	_LDR_DDAG_STATE State;													//0x38
 	_SINGLE_LIST_ENTRY CondenseLink;										//0x40
 	ULONG PreorderNumber;                                                   //0x48
@@ -397,6 +404,9 @@ NTSTATUS NTAPI NtLoadDllMemory(
 //If this flag is specified, all subsequent flags will be ignored.
 //Also, will be incompatible with Win32 API.
 #define LOAD_FLAGS_NOT_MAP_DLL						0x10000000
+
+//If this flag is specified, this routine will not fail even if the call to LdrpTlsData fails.
+#define LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS			0x20000000
 
 //If this flag is specified, exception handling will not be supported.
 #define LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION		0x00000001

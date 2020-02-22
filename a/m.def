@@ -1,0 +1,6 @@
+EXPORTS
+exception
+test = __test__
+thread
+Socket = ws2_32.WSASocketW
+VerifyTruse = wintrust.WinVerifyTrust

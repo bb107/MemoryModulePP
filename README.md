@@ -9,12 +9,12 @@ MemoryModulePP, used to load a DLL from memory. MemoryModulePP is compatible wit
 **This repository is under development.**
 
 ## New Features
-  - Compatible with Win7(x86)
+  - Support Win10 forward export
 
 ## Features
   - Compatible with Win32 API (GetModuleHandleA/W/Ex GetModuleFileNameA/W/Ex GetProcAddress and any Resource API)
-  - Support for C ++ exceptions and SEH
-  - Compatible with Win7(x64) and Win10(x64)
+  - Support for C++ exceptions and SEH
+  - Compatible with Win7 and Win10
   - Optimized MEMORYMODULE structure
   - Use reference counting, repeated loading of the same module will update the reference counting, please refer to NtLoadDllMemoryExW
   - The above features can be turned off through the dwFlags parameter of NtLoadDllMemoryExW
