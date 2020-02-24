@@ -36,5 +36,8 @@
     <None Include="m.def">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="binary1.bin">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

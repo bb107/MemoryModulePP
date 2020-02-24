@@ -33,13 +33,19 @@ static PIMAGE_NT_HEADERS WINAPI GetImageNtHeaders(PMEMORYMODULE pModule) {
 }
 
 PMEMORYMODULE WINAPI MapMemoryModuleHandle(HMEMORYMODULE hModule) {
-	PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)hModule;
-	if (!dos)return nullptr;
-	PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((LPBYTE)hModule + dos->e_lfanew);
-	if (!nt)return nullptr;
-	PMEMORYMODULE pModule = (PMEMORYMODULE)((LPBYTE)hModule + nt->OptionalHeader.SizeOfHeaders);
-	if (pModule->Signature != MEMORY_MODULE_SIGNATURE || (size_t)pModule->codeBase != nt->OptionalHeader.ImageBase)return nullptr;
-	return pModule;
+	__try {
+		PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)hModule;
+		if (!dos)return nullptr;
+		PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((LPBYTE)hModule + dos->e_lfanew);
+		if (!nt)return nullptr;
+		PMEMORYMODULE pModule = (PMEMORYMODULE)((LPBYTE)hModule + nt->OptionalHeader.SizeOfHeaders);
+		if (!_ProbeForRead(pModule, sizeof(MEMORYMODULE)))return nullptr;
+		if (pModule->Signature != MEMORY_MODULE_SIGNATURE || (size_t)pModule->codeBase != nt->OptionalHeader.ImageBase)return nullptr;
+		return pModule;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return nullptr;
+	}
 }
 
 bool WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule) {
@@ -124,15 +130,6 @@ static VOID FinalSectionsProtect(PMEMORYMODULE module) {
 			GetRealSectionSize(module, sections), protect, &oldProtect);
 	}
 	return;
-}
-
-static BOOL CheckSize(size_t size, size_t expected) {
-	if (size < expected) {
-		SetLastError(ERROR_INVALID_DATA);
-		return FALSE;
-	}
-
-	return TRUE;
 }
 
 static BOOL CopySections(const unsigned char* data, PMEMORYMODULE module) {
@@ -244,7 +241,7 @@ static BOOL ExecuteTLS(PMEMORYMODULE module) {
 	unsigned char* codeBase = module->codeBase;
 	PIMAGE_TLS_DIRECTORY tls;
 	PIMAGE_TLS_CALLBACK* callback;
-	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
+	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(codeBase);
 	PIMAGE_DATA_DIRECTORY directory = GET_HEADER_DICTIONARY(headers, IMAGE_DIRECTORY_ENTRY_TLS);
 	if (directory->VirtualAddress == 0) return TRUE;
 
@@ -359,15 +356,6 @@ static BOOL BuildImportTable(PMEMORYMODULE module) {
 
 	return result;
 }
-
-//static BOOL PerformForwardExport(PMEMORYMODULE module) {
-//	PIMAGE_EXPORT_DIRECTORY exports;
-//	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
-//	PIMAGE_DATA_DIRECTORY directory = GET_HEADER_DICTIONARY(headers, IMAGE_DIRECTORY_ENTRY_EXPORT);
-//	if (!directory->Size)return TRUE;
-//	return FALSE;
-//
-//}
 
 HMEMORYMODULE MemoryLoadLibrary(const void* data) {
 	PMEMORYMODULE hMemoryModule = nullptr;
@@ -534,18 +522,48 @@ error:
 	return nullptr;
 }
 
+bool MemoryFreeLibrary(HMEMORYMODULE mod) {
+	PMEMORYMODULE module = MapMemoryModuleHandle(mod);
+	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(mod);
+
+	if (!module) return false;
+	if (module->loadFromNtLoadDllMemory && !module->underUnload)return false;
+	if (module->initialized) {
+		DllEntryProc DllEntry = (DllEntryProc)(LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint);
+		(*DllEntry)((HINSTANCE)module->codeBase, DLL_PROCESS_DETACH, 0);
+	}
+	if (module->nameExportsTable)delete[] module->nameExportsTable;
+	if (module->hModulesList != nullptr) {
+		int i;
+		for (i = 0; i < module->dwModulesCount; i++) {
+			if (module->hModulesList[i]) {
+				FreeLibrary(module->hModulesList[i]);
+			}
+		}
+		free(module->hModulesList);
+	}
+#ifdef _WIN64
+	FreePointerList(module->blockedMemory);
+#endif
+	if (module->codeBase != nullptr) VirtualFree(mod, 0, MEM_RELEASE);
+	return true;
+}
+
+
+
+/*
+	Deprecated API
+*/
 static int _compare(const void* a, const void* b) {
 	const struct ExportNameEntry* p1 = (const struct ExportNameEntry*) a;
 	const struct ExportNameEntry* p2 = (const struct ExportNameEntry*) b;
 	return strcmp(p1->name, p2->name);
 }
-
 static int _find(const void* a, const void* b) {
 	LPCSTR* name = (LPCSTR*)a;
 	const struct ExportNameEntry* p = (const struct ExportNameEntry*) b;
 	return strcmp(*name, p->name);
 }
-
 FARPROC MemoryGetProcAddress(HMEMORYMODULE mod, LPCSTR name) {
 	PMEMORYMODULE module = MapMemoryModuleHandle(mod);
 	unsigned char* codeBase = module->codeBase;
@@ -625,40 +643,10 @@ FARPROC MemoryGetProcAddress(HMEMORYMODULE mod, LPCSTR name) {
 	// AddressOfFunctions contains the RVAs to the "real" functions
 	return (FARPROC)(LPVOID)(codeBase + (*(DWORD*)(codeBase + exports->AddressOfFunctions + (static_cast<size_t>(idx) * 4))));
 }
-
-bool MemoryFreeLibrary(HMEMORYMODULE mod) {
-	PMEMORYMODULE module = MapMemoryModuleHandle(mod);
-	PIMAGE_NT_HEADERS headers = module ? GetImageNtHeaders(module) : nullptr;
-
-	if (!module || module->Signature != MEMORY_MODULE_SIGNATURE || !headers) return false;
-	if (module->loadFromNtLoadDllMemory && !module->underUnload)return false;
-	if (module->initialized) {
-		DllEntryProc DllEntry = (DllEntryProc)(LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint);
-		(*DllEntry)((HINSTANCE)module->codeBase, DLL_PROCESS_DETACH, 0);
-	}
-	if (module->nameExportsTable)delete[] module->nameExportsTable;
-	if (module->hModulesList != nullptr) {
-		int i;
-		for (i = 0; i < module->dwModulesCount; i++) {
-			if (module->hModulesList[i]) {
-				FreeLibrary(module->hModulesList[i]);
-			}
-		}
-		free(module->hModulesList);
-	}
-#ifdef _WIN64
-	FreePointerList(module->blockedMemory);
-#endif
-	if (module->codeBase != nullptr) VirtualFree(mod, 0, MEM_RELEASE);
-	return true;
-}
-
 #define DEFAULT_LANGUAGE        MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL)
-
 HMEMORYRSRC MemoryFindResource(HMEMORYMODULE module, LPCTSTR name, LPCTSTR type) {
 	return MemoryFindResourceEx(module, name, type, DEFAULT_LANGUAGE);
 }
-
 static PIMAGE_RESOURCE_DIRECTORY_ENTRY _MemorySearchResourceEntry(void* root, PIMAGE_RESOURCE_DIRECTORY resources, LPCTSTR key) {
 	PIMAGE_RESOURCE_DIRECTORY_ENTRY entries = (PIMAGE_RESOURCE_DIRECTORY_ENTRY)(resources + 1);
 	PIMAGE_RESOURCE_DIRECTORY_ENTRY result = nullptr;
@@ -765,7 +753,6 @@ static PIMAGE_RESOURCE_DIRECTORY_ENTRY _MemorySearchResourceEntry(void* root, PI
 
 	return result;
 }
-
 HMEMORYRSRC MemoryFindResourceEx(HMEMORYMODULE module, LPCTSTR name, LPCTSTR type, WORD language) {
 	PMEMORYMODULE mod = MapMemoryModuleHandle(module);
 	unsigned char* codeBase = mod->codeBase;
@@ -819,7 +806,6 @@ HMEMORYRSRC MemoryFindResourceEx(HMEMORYMODULE module, LPCTSTR name, LPCTSTR typ
 
 	return (codeBase + directory->VirtualAddress + (foundLanguage->OffsetToData & 0x7fffffff));
 }
-
 DWORD MemorySizeofResource(HMEMORYMODULE module, HMEMORYRSRC resource) {
 	PIMAGE_RESOURCE_DATA_ENTRY entry;
 	UNREFERENCED_PARAMETER(module);
@@ -830,7 +816,6 @@ DWORD MemorySizeofResource(HMEMORYMODULE module, HMEMORYRSRC resource) {
 
 	return entry->Size;
 }
-
 LPVOID MemoryLoadResource(HMEMORYMODULE module, HMEMORYRSRC resource) {
 	unsigned char* codeBase = MapMemoryModuleHandle(module)->codeBase;
 	PIMAGE_RESOURCE_DATA_ENTRY entry = (PIMAGE_RESOURCE_DATA_ENTRY)resource;
@@ -840,11 +825,9 @@ LPVOID MemoryLoadResource(HMEMORYMODULE module, HMEMORYRSRC resource) {
 
 	return codeBase + entry->OffsetToData;
 }
-
 int MemoryLoadString(HMEMORYMODULE module, UINT id, LPTSTR buffer, int maxsize) {
 	return MemoryLoadStringEx(module, id, buffer, maxsize, DEFAULT_LANGUAGE);
 }
-
 int MemoryLoadStringEx(HMEMORYMODULE module, UINT id, LPTSTR buffer, int maxsize, WORD language) {
 	HMEMORYRSRC resource;
 	PIMAGE_RESOURCE_DIR_STRING_U data;

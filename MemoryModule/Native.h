@@ -1225,11 +1225,6 @@ PVOID RtlCreateHeap(
 	PVOID                Lock,
 	PRTL_HEAP_PARAMETERS Parameters
 );
-PVOID BsRtlCreateHeap(
-	ULONG                Flags,
-	SIZE_T               ReserveSize,
-	SIZE_T               CommitSize
-);
 PVOID RtlDestroyHeap(
 	PVOID HeapHandle
 );
@@ -1406,10 +1401,15 @@ PVOID NTAPI RtlDecodeSystemPointer(PVOID Pointer);
 #define NtCurrentThread()	(HANDLE)-2
 
 BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
+BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
 #define ProbeForRead(pBuffer, size)			VirtualAccessCheck(pBuffer, size, PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)
 #define ProbeForWrite(pBuffer, size)		VirtualAccessCheck(pBuffer, size, PAGE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)
 #define ProbeForReadWrite(pBuffer, size)	VirtualAccessCheck(pBuffer, size, PAGE_EXECUTE_READWRITE | PAGE_READWRITE)
 #define ProbeForExecute(pBuffer, size)		VirtualAccessCheck(pBuffer, size, PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
+#define _ProbeForRead(pBuffer, size)		VirtualAccessCheckNoException(pBuffer, size, PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)
+#define _ProbeForWrite(pBuffer, size)		VirtualAccessCheckNoException(pBuffer, size, PAGE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)
+#define _ProbeForReadWrite(pBuffer, size)	VirtualAccessCheckNoException(pBuffer, size, PAGE_EXECUTE_READWRITE | PAGE_READWRITE)
+#define _ProbeForExecute(pBuffer, size)		VirtualAccessCheckNoException(pBuffer, size, PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
 
 //Flags
 #define LOCK_RAISE_EXCEPTION 1
@@ -1421,3 +1421,7 @@ BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK prote
 NTSTATUS NTAPI LdrLockLoaderLock(size_t Flags, size_t* State, size_t* Cookie);
 NTSTATUS NTAPI LdrUnlockLoaderLock(size_t Flags, size_t Cookie);
 NTSTATUS NTAPI LdrUnloadDll(IN HANDLE ModuleHandle);
+
+#define RtlRaiseStatus(_Status_) ((VOID(NTAPI*)(NTSTATUS Status))(RtlGetNtProcAddress("RtlRaiseStatus")))(_Status_)
+
+DECLSPEC_NORETURN VOID NTAPI RtlExitUserThread(IN NTSTATUS ExitStatus);

@@ -1,21 +1,13 @@
-#include "../MemoryModule/NativeFunctionsInternal.h"
-//#include "../MemoryModule/LoadDllMemoryApi.h"
+//#include "../MemoryModule/NativeFunctionsInternal.h"
+#include "../MemoryModule/LoadDllMemoryApi.h"
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
 #include <cstdio>
 #pragma warning(disable:4996)
-PLDR_DATA_TABLE_ENTRY_WIN10_2 RtlFindDllLdrEntry(LPCWSTR DllName) {
-    PLIST_ENTRY head = &NtCurrentPeb()->Ldr->InMemoryOrderModuleList, entry = head->Flink;
-    PLDR_DATA_TABLE_ENTRY_WIN10_2 cur = nullptr;
-    while (entry != head) {
-        cur = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY_WIN10_2, InMemoryOrderLinks);
-        entry = entry->Flink;
-        if (!wcsicmp(DllName, cur->BaseDllName.Buffer))return cur;
-    }
-    return nullptr;
-}
+
 int main() {
+    //return ((int(*)(int))GetProcAddress(LoadLibraryW(L"a.dll"), "exception"))(0);
     LPVOID buffer;
     size_t size;
     FILE* f = fopen("a.dll", "rb");
@@ -28,25 +20,82 @@ int main() {
     _fseeki64(f, 0, SEEK_SET);
     fread(buffer = new char[size], 1, size, f);
     fclose(f);
-
+    
     HMEMORYMODULE m1 = nullptr, m2 = m1;
     HMODULE hModule = nullptr;
     FARPROC pfn = nullptr;
+    DWORD MemoryModuleFeatures = 0;
 
-    if (!NT_SUCCESS(NtLoadDllMemoryExW(&m1, nullptr, 0, buffer, size, L"kernel64", nullptr))) goto end;
-    if (!NT_SUCCESS(NtLoadDllMemoryExW(&m2, nullptr, 0, buffer, size, L"kernel128", nullptr))) goto end;
+    typedef int(* _exception)(int code);
+    _exception exception = nullptr;
+    HRSRC hRsrc;
+    DWORD SizeofRes;
+    HGLOBAL gRes;
+    char str[10];
+
+    NtQuerySystemMemoryModuleFeatures(&MemoryModuleFeatures);
+    if (MemoryModuleFeatures != MEMORY_FEATURE_ALL) {
+        printf("not support all features on this version of windows.\n");
+    }
+    
+    if (!NT_SUCCESS(NtLoadDllMemoryExW(&m1, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
+    LoadLibraryW(L"wininet.dll");
+    if (!NT_SUCCESS(NtLoadDllMemoryExW(&m2, nullptr, 0, buffer, 0, L"kernel128", nullptr))) goto end;
+
+    //forward export
     hModule = (HMODULE)m1;
     pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket")); //ws2_32.WSASocketW
     pfn = (decltype(pfn))(GetProcAddress(hModule, "VerifyTruse")); //wintrust.WinVerifyTrust
     hModule = (HMODULE)m2;
     pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket"));
     pfn = (decltype(pfn))(GetProcAddress(hModule, "VerifyTruse"));
-    printf("pfn = %p\n", pfn);
+
+    //exception
+    hModule = (HMODULE)m1;
+    exception = (_exception)GetProcAddress(hModule, "exception");
+    if (exception) {
+        for (int i = 0; i < 4; ++i)exception(i);
+    }
+    
+    //tls
+    pfn = GetProcAddress(hModule, "thread");
+    if (pfn && pfn()) {
+        printf("thread test failed.\n");
+    }
+
+    //resource
+    if (!LoadStringA(hModule, 101, str, 10)) {
+        printf("load string failed.\n");
+    }
+    else {
+        printf("%s\n", str);
+    }
+    if (!(hRsrc = FindResourceA(hModule, MAKEINTRESOURCEA(102), "BINARY"))) {
+        printf("find binary resource failed.\n");
+    }
+    else {
+        if ((SizeofRes = SizeofResource(hModule, hRsrc)) != 0x10) {
+            printf("invalid res size.\n");
+        }
+        else {
+            if (!(gRes = LoadResource(hModule, hRsrc))) {
+                printf("load res failed.\n");
+            }
+            else {
+                if (!LockResource(gRes))printf("lock res failed.\n");
+                else {
+                    printf("resource test success.\n");
+                }
+            }
+        }
+    }
 
 end:
     delete[]buffer;
     if (m1)NtUnloadDllMemory(m1);
+    FreeLibrary(GetModuleHandleW(L"wininet.dll"));
     if (m2)NtUnloadDllMemory(m2);
+
     return 0;
 }
 

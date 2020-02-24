@@ -75,10 +75,6 @@ PVOID RtlCreateHeap(ULONG Flags, PVOID HeapBase, SIZE_T ReserveSize, SIZE_T Comm
 		Flags, HeapBase, ReserveSize, CommitSize, Lock, Parameters);
 }
 
-PVOID BsRtlCreateHeap(ULONG Flags, SIZE_T ReserveSize, SIZE_T CommitSize) {
-	return RtlCreateHeap(Flags | HEAP_GROWABLE, NULL, ReserveSize, CommitSize, NULL, NULL);
-}
-
 PVOID RtlDestroyHeap(PVOID HeapHandle) {
 	return ((PVOID(__stdcall*)(PVOID))RtlGetNtProcAddress("RtlDestroyHeap"))(HeapHandle);
 }
@@ -365,12 +361,20 @@ PVOID NTAPI RtlDecodeSystemPointer(PVOID Pointer) {
 	return decltype(&RtlDecodeSystemPointer)(RtlGetNtProcAddress("RtlDecodeSystemPointer"))(Pointer);
 }
 
+BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS_MASK protect) {
+	if (size) {
+		MEMORY_BASIC_INFORMATION mbi{};
+		SIZE_T len = 0;
+		if (!NT_SUCCESS(NtQueryVirtualMemory(NtCurrentProcess(), const_cast<PVOID>(pBuffer), MemoryBasicInformation, &mbi, sizeof(mbi), &len)) ||
+			!(mbi.Protect & protect)) {
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
 BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK protect) {
-	MEMORY_BASIC_INFORMATION mbi{};
-	SIZE_T len = 0;
-	if (!NT_SUCCESS(NtQueryVirtualMemory(NtCurrentProcess(), const_cast<PVOID>(pBuffer), MemoryBasicInformation, &mbi, sizeof(mbi), &len)) ||
-		!(mbi.Protect & protect)) {
-		RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
+	if (!VirtualAccessCheckNoException(pBuffer, size, protect)) {
+		RtlRaiseStatus(STATUS_ACCESS_VIOLATION);
 		return FALSE;
 	}
 	return TRUE;
@@ -385,3 +389,8 @@ NTSTATUS NTAPI LdrUnlockLoaderLock(size_t Flags, size_t Cookie) {
 NTSTATUS NTAPI LdrUnloadDll(IN HANDLE ModuleHandle) {
 	return (decltype(&LdrUnloadDll)(RtlGetNtProcAddress("LdrUnloadDll")))(ModuleHandle);
 }
+
+DECLSPEC_NORETURN VOID NTAPI RtlExitUserThread(IN NTSTATUS ExitStatus) {
+	(decltype(&RtlExitUserThread)(RtlGetNtProcAddress("RtlExitUserThread")))(ExitStatus);
+}
+

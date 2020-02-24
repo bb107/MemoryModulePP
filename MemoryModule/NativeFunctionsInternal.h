@@ -121,6 +121,19 @@ struct _LDR_DDAG_NODE {
 	_SINGLE_LIST_ENTRY CondenseLink;										//0x40
 	ULONG PreorderNumber;                                                   //0x48
 };
+struct _LDR_DDAG_NODE_WIN8 {
+	_LIST_ENTRY Modules;							                        //0x0
+	_LDR_SERVICE_TAG_RECORD* ServiceTagList;				                //0x10
+	ULONG LoadCount;                                                        //0x18
+	ULONG ReferenceCount;                                                   //0x1c
+	ULONG DependencyCount;                                                  //0x20
+	_LDRP_CSLIST::_LDRP_CSLIST_DEPENDENT* Dependencies;						//0x28
+	_LDRP_CSLIST::_LDRP_CSLIST_INCOMMING* IncomingDependencies;				//0x30
+	_LDR_DDAG_STATE State;                                                  //0x38
+	_SINGLE_LIST_ENTRY CondenseLink;									    //0x40
+	ULONG PreorderNumber;                                                   //0x48
+	ULONG LowestLink;                                                       //0x4c
+};
 
 //5.1.2600  Windows XP SP3
 //5.2.3790  Windows XP | 2003 SP2
@@ -219,7 +232,7 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN8 {
 	ULONG TimeDateStamp;                                                      //0x80
 	_ACTIVATION_CONTEXT* EntryPointActivationContext;                         //0x88
 	VOID* PatchInformation;                                                   //0x90
-	_LDR_DDAG_NODE* DdagNode;                                                 //0x98
+	_LDR_DDAG_NODE_WIN8* DdagNode;                                            //0x98
 	_LIST_ENTRY NodeModuleLink;                                               //0xa0
 	VOID* SnapContext;						                                  //0xb0
 	VOID* ParentDllBase;                                                      //0xb8
@@ -437,6 +450,11 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 );
 
 NTSTATUS NTAPI NtUnloadDllMemory(IN HMEMORYMODULE BaseAddress);
+
+extern "C" {
+	__declspec(noreturn) VOID NTAPI NtUnloadDllMemoryAndExitThread(IN HMEMORYMODULE BaseAddress, IN DWORD dwExitCode);
+}
+
 
 typedef struct _RTL_RB_TREE {
 	PRTL_BALANCED_NODE Root;

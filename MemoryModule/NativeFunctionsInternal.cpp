@@ -26,14 +26,48 @@ static bool NTAPI RtlVerifyVersion(IN DWORD MajorVersion, IN DWORD MinorVersion 
 	return false;
 }
 static bool NTAPI RtlIsWindowsVersionOrGreater(IN DWORD MajorVersion, IN DWORD MinorVersion, IN DWORD BuildNumber) {
-	DWORD Versions[3];
-	RtlGetNtVersionNumbers(Versions, Versions + 1, Versions + 2);
+	static DWORD Versions[3]{};
+	if (!Versions[0])RtlGetNtVersionNumbers(Versions, Versions + 1, Versions + 2);
+
 	if (Versions[0] == MajorVersion) {
 		if (Versions[1] == MinorVersion) return Versions[2] >= BuildNumber;
 		else return (Versions[1] > MinorVersion);
 	}
 	else return Versions[0] > MajorVersion;
 }
+static bool NTAPI RtlIsWindowsVersionInScope(
+	IN DWORD MinMajorVersion, IN DWORD MinMinorVersion, IN DWORD MinBuildNumber,
+	IN DWORD MaxMajorVersion, IN DWORD MaxMinorVersion, IN DWORD MaxBuildNumber) {
+	return RtlIsWindowsVersionOrGreater(MinMajorVersion, MinMinorVersion, MinBuildNumber) && 
+		!RtlIsWindowsVersionOrGreater(MaxMajorVersion, MaxMinorVersion, MaxBuildNumber);
+}
+
+static PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(PVOID BaseAddress) {
+	PLIST_ENTRY ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList, ListEntry = ListHead->Flink;
+	PLDR_DATA_TABLE_ENTRY CurEntry;
+	while (ListEntry != ListHead) {
+		CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+		ListEntry = ListEntry->Flink;
+		if (CurEntry->DllBase == BaseAddress) {
+			return CurEntry;
+		}
+	}
+	return nullptr;
+}
+static PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(PCWSTR BaseName) {
+	PLIST_ENTRY ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList, ListEntry = ListHead->Flink;
+	PLDR_DATA_TABLE_ENTRY CurEntry;
+	while (ListEntry != ListHead) {
+		CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+		ListEntry = ListEntry->Flink;
+		if (!wcsnicmp(BaseName, CurEntry->BaseDllName.Buffer, (CurEntry->BaseDllName.Length / sizeof(wchar_t)) - 4) ||
+			!wcsnicmp(BaseName, CurEntry->BaseDllName.Buffer, CurEntry->BaseDllName.Length / sizeof(wchar_t))) {
+			return CurEntry;
+		}
+	}
+	return nullptr;
+}
+#define RtlFindNtdllLdrEntry()	RtlFindLdrTableEntryByBaseName(L"ntdll.dll")
 
 static ULONG NTAPI LdrHashEntry(IN const UNICODE_STRING& str, IN bool _xor = true) {
 	ULONG result = 0;
@@ -61,22 +95,6 @@ static HANDLE NTAPI RtlFindtLdrpHeap() {
 	CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 	NtQueryVirtualMemory(NtCurrentProcess(), CurEntry, MemoryBasicInformation, &mbi, sizeof(mbi), (PSIZE_T)&ListHead);
 	return result = mbi.AllocationBase;
-}
-static PLDR_DATA_TABLE_ENTRY NTAPI RtlFindNtdllLdrEntry() {
-	PLIST_ENTRY ListHead, ListEntry;
-	static PLDR_DATA_TABLE_ENTRY CurEntry = nullptr;
-	if (CurEntry)return CurEntry;
-
-	ListHead = &NtCurrentPeb()->Ldr->InInitializationOrderModuleList;
-	ListEntry = ListHead->Flink;
-	while (ListHead != ListEntry) {
-		CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InInitializationOrderLinks);
-		ListEntry = ListEntry->Flink;
-		if (0 == wcsnicmp(CurEntry->BaseDllName.Buffer, L"ntdll.dll", CurEntry->BaseDllName.Length))
-			return CurEntry;
-	}
-
-	return CurEntry = nullptr;
 }
 static PLIST_ENTRY NTAPI RtlFindLdrpHashTable() {
 	static PLIST_ENTRY list = nullptr;
@@ -271,28 +289,29 @@ static NTSTATUS NTAPI NtRemoveModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTR
 	return STATUS_SUCCESS;
 }
 
-static NTSTATUS NTAPI NtFreeDependencies(IN PLDR_DATA_TABLE_ENTRY_WIN8 LdrEntry) {
+static NTSTATUS NTAPI NtFreeDependencies(IN PLDR_DATA_TABLE_ENTRY_WIN10 LdrEntry) {
 	_LDR_DDAG_NODE* DependentDdgeNode = nullptr;
-	PLDR_DATA_TABLE_ENTRY_WIN8 ModuleEntry = nullptr;
+	PLDR_DATA_TABLE_ENTRY_WIN10 ModuleEntry = nullptr;
 	_LDRP_CSLIST* head = (decltype(head))LdrEntry->DdagNode->Dependencies, *entry = head;
+	const static bool IsWin8 = RtlIsWindowsVersionInScope(6, 2, 0, 6, 3, -1);
 	if (!LdrEntry->DdagNode->Dependencies)return STATUS_SUCCESS;
-
+	
 	//find all dependencies and free
 	do {
 		DependentDdgeNode = entry->Dependent.DependentDdagNode;
-		if (DependentDdgeNode->Modules.Flink->Flink != &DependentDdgeNode->Modules) RaiseException(-1, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+		if (DependentDdgeNode->Modules.Flink->Flink != &DependentDdgeNode->Modules) __fastfail(FAST_FAIL_CORRUPT_LIST_ENTRY);
 		ModuleEntry = decltype(ModuleEntry)((size_t)DependentDdgeNode->Modules.Flink - offsetof(_LDR_DATA_TABLE_ENTRY_WIN8, NodeModuleLink));
-		if (ModuleEntry->DdagNode != DependentDdgeNode) RaiseException(-1, EXCEPTION_NONCONTINUABLE, 0, nullptr);
-		if (!DependentDdgeNode->IncomingDependencies) RaiseException(-1, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+		if (ModuleEntry->DdagNode != DependentDdgeNode) __fastfail(FAST_FAIL_CORRUPT_LIST_ENTRY);
+		if (!DependentDdgeNode->IncomingDependencies) __fastfail(FAST_FAIL_CORRUPT_LIST_ENTRY);
 		_LDRP_CSLIST::_LDRP_CSLIST_INCOMMING* _last = DependentDdgeNode->IncomingDependencies, *_entry = _last;
 		_LDR_DDAG_NODE* CurrentDdagNode;
 		size_t State = 0, Cookies;
 
 		//Acquire LoaderLock
 		do {
-			if (!NT_SUCCESS(LdrLockLoaderLock(LOCK_NO_WAIT_IF_BUSY, &State, &Cookies)))
-				RaiseException(-1, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+			if (!NT_SUCCESS(LdrLockLoaderLock(LOCK_NO_WAIT_IF_BUSY, &State, &Cookies))) __fastfail(FAST_FAIL_FATAL_APP_EXIT);
 		} while (State != LOCK_STATE_ENTERED);
+
 		do {
 			CurrentDdagNode = (decltype(CurrentDdagNode))((size_t)_entry->IncommingDdagNode & ~1);
 			if (CurrentDdagNode == LdrEntry->DdagNode) {
@@ -316,19 +335,32 @@ static NTSTATUS NTAPI NtFreeDependencies(IN PLDR_DATA_TABLE_ENTRY_WIN8 LdrEntry)
 				}
 				break;
 			}
+
 			//save the last entry
 			if (_last != _entry)_last = (decltype(_last))_last->NextIncommingEntry;
 			_entry = (decltype(_entry))_entry->NextIncommingEntry;
 		} while (_entry != _last);
 		//free LoaderLock
 		LdrUnlockLoaderLock(0, Cookies);
+		entry = (decltype(entry))entry->Dependent.NextDependentEntry;
 
 		//free it
-		LdrUnloadDll(ModuleEntry->DllBase);
+		if (IsWin8) {
+			//Update win8 dep count
+			_LDR_DDAG_NODE_WIN8* win8_node = (decltype(win8_node))ModuleEntry->DdagNode;
+			if (!win8_node->DependencyCount)__fastfail(FAST_FAIL_CORRUPT_LIST_ENTRY);
+			--win8_node->DependencyCount;
+			if (!ModuleEntry->DdagNode->LoadCount && win8_node->ReferenceCount == 1 && !win8_node->DependencyCount) {
+				win8_node->LoadCount = 1;
+				LdrUnloadDll(ModuleEntry->DllBase);
+			}
+		}
+		else {
+			LdrUnloadDll(ModuleEntry->DllBase);
+		}
 		NtFreeLdrpHeap(LdrEntry->DdagNode->Dependencies);
 
 		//lookup next dependent.
-		entry = (decltype(entry))entry->Dependent.NextDependentEntry;
 		LdrEntry->DdagNode->Dependencies = (_LDRP_CSLIST::_LDRP_CSLIST_DEPENDENT*)(entry == head ? nullptr : entry);
 	} while (entry != head);
 
@@ -355,12 +387,14 @@ static bool NTAPI NtInitializeLdrDataTableEntry(
 	case win8:
 	case win8_1: {
 		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN8)LdrEntry;
+		const static bool IsWin8 = RtlIsWindowsVersionInScope(6, 2, 0, 6, 3, -1);
 		NtQuerySystemTime(&entry->LoadTime);
 		entry->OriginalBase = headers->OptionalHeader.ImageBase;
 		entry->BaseNameHashValue = LdrHashEntry(DllBaseName, false);
 		entry->LoadReason = LoadReasonDynamicLoad;
 		if (!NT_SUCCESS(NtInsertModuleBaseAddressIndexNode(LdrEntry, BaseAddress)))return false;
-		if (!(entry->DdagNode = (decltype(entry->DdagNode))NtAllocateLdrpHeap(sizeof(_LDR_DDAG_NODE))))return false;
+		if (!(entry->DdagNode = (decltype(entry->DdagNode))
+			NtAllocateLdrpHeap(IsWin8 ? sizeof(_LDR_DDAG_NODE_WIN8) : sizeof(_LDR_DDAG_NODE))))return false;
 		//NtInitializeListEntry(&entry->NodeModuleLink);
 		//NtInitializeListEntry(&entry->DdagNode->Modules);
 		//NtInitializeSingleEntry(&entry->DdagNode->CondenseLink);
@@ -370,6 +404,7 @@ static bool NTAPI NtInitializeLdrDataTableEntry(
 		entry->DdagNode->Modules.Blink = &entry->NodeModuleLink;
 		entry->DdagNode->State = LdrModulesReadyToRun;
 		entry->DdagNode->LoadCount = 1;
+		if (IsWin8) ((_LDR_DDAG_NODE_WIN8*)(entry->DdagNode))->ReferenceCount = 1;
 		entry->ImageDll = entry->LoadNotificationsSent = entry->EntryProcessed =
 			entry->InLegacyLists = entry->InIndexes = entry->ProcessAttachCalled = true;
 		entry->InExceptionTable = !(dwFlags & LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION);
@@ -414,7 +449,7 @@ static bool NTAPI NtFreeLdrDataTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	case win10_2:
 	case win8:
 	case win8_1: {
-		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN8)LdrEntry;
+		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN10)LdrEntry;
 		NtFreeDependencies(entry);
 		NtFreeLdrpHeap(entry->DdagNode);
 		NtRemoveModuleBaseAddressIndexNode(LdrEntry);
@@ -630,7 +665,8 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 	UNREFERENCED_PARAMETER(BufferSize);
 
 	__try {
-		if (IsBadReadPtr(BufferAddress, BufferSize))status = STATUS_ACCESS_VIOLATION;
+		//ProbeForRead(BufferAddress, BufferSize);
+		if (BufferSize)status = STATUS_INVALID_PARAMETER_5;
 		*BaseAddress = nullptr;
 		if (LdrEntry)*LdrEntry = nullptr;
 	}
@@ -668,6 +704,7 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 					if (!module->UseReferenceCount || dwFlags & LOAD_FLAGS_NOT_USE_REFERENCE_COUNT)return STATUS_INVALID_PARAMETER_3;
 					NtUpdateReferenceCount(CurEntry, FLAG_REFERENCE);
 					*BaseAddress = CurEntry->DllBase;
+					if (LdrEntry)*LdrEntry = CurEntry;
 					return STATUS_SUCCESS;
 				}
 			}
@@ -687,8 +724,10 @@ NTSTATUS NTAPI NtLoadDllMemoryExW(
 		}
 	}
 	if (!(module = MapMemoryModuleHandle(*BaseAddress))) {
-		__fastfail(STATUS_INVALID_ADDRESS);
-		return STATUS_INVALID_ADDRESS;
+		__fastfail(FAST_FAIL_FATAL_APP_EXIT);
+		DebugBreak();
+		ExitProcess(STATUS_INVALID_ADDRESS);
+		TerminateProcess(NtCurrentProcess(), STATUS_INVALID_ADDRESS);
 	}
 	module->loadFromNtLoadDllMemory = true;
 	headers = RtlImageNtHeader(*BaseAddress);
@@ -765,9 +804,13 @@ NTSTATUS NTAPI NtLoadDllMemoryExA(
 }
 
 NTSTATUS NTAPI NtUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
-	if (IsBadReadPtr(BaseAddress, sizeof(size_t)))return STATUS_ACCESS_VIOLATION;
+	__try {
+		ProbeForRead(BaseAddress, sizeof(size_t));
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return GetExceptionCode();
+	}
 	
-	PLIST_ENTRY ListHead, ListEntry;
 	PLDR_DATA_TABLE_ENTRY CurEntry;
 	ULONG count = 0;
 	NTSTATUS status = STATUS_SUCCESS;
@@ -779,41 +822,39 @@ NTSTATUS NTAPI NtUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 	//Mapping dll failed
 	if (module->loadFromNtLoadDllMemory && !module->MappedDll) {
 		module->underUnload = true;
-		MemoryFreeLibrary(BaseAddress);
-		return STATUS_SUCCESS;
+		return MemoryFreeLibrary(BaseAddress) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
 	}
 
-	ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
-	ListEntry = ListHead->Flink;
-	while (ListEntry != ListHead) {
-		CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-		ListEntry = ListEntry->Flink;
-		if (CurEntry->DllBase == BaseAddress) {
-			if (RtlImageNtHeader(BaseAddress)->OptionalHeader.SizeOfImage == CurEntry->SizeOfImage) {
-				if (module->UseReferenceCount) {
-					status = NtGetReferenceCount(CurEntry, &count);
-					if (!NT_SUCCESS(status))return status;
-				}
-				if (!(count & ~1)) {
-					module->underUnload = true;
-					if (module->MappedDll) {
-						if (module->InsertInvertedFunctionTableEntry) {
-							status = RtlRemoveInvertedFunctionTable(BaseAddress);
-							if (!NT_SUCCESS(status))__fastfail(status);
-						}
-						if (!NtFreeLdrDataTableEntry(CurEntry))__fastfail(STATUS_NOT_SUPPORTED);
+	if (CurEntry = RtlFindLdrTableEntryByHandle(BaseAddress)) {
+		if (RtlImageNtHeader(BaseAddress)->OptionalHeader.SizeOfImage == CurEntry->SizeOfImage) {
+			if (module->UseReferenceCount) {
+				status = NtGetReferenceCount(CurEntry, &count);
+				if (!NT_SUCCESS(status))return status;
+			}
+			if (!(count & ~1)) {
+				module->underUnload = true;
+				if (module->MappedDll) {
+					if (module->InsertInvertedFunctionTableEntry) {
+						status = RtlRemoveInvertedFunctionTable(BaseAddress);
+						if (!NT_SUCCESS(status))__fastfail(FAST_FAIL_CORRUPT_LIST_ENTRY);
 					}
-					if (!MemoryFreeLibrary(BaseAddress))__fastfail(STATUS_UNSUCCESSFUL);
-					return STATUS_SUCCESS;
+					if (!NtFreeLdrDataTableEntry(CurEntry))__fastfail(FAST_FAIL_FATAL_APP_EXIT);
 				}
-				else {
-					return NtUpdateReferenceCount(CurEntry, FLAG_DEREFERENCE);
-				}
+				if (!MemoryFreeLibrary(BaseAddress))__fastfail(FAST_FAIL_FATAL_APP_EXIT);
+				return STATUS_SUCCESS;
+			}
+			else {
+				return NtUpdateReferenceCount(CurEntry, FLAG_DEREFERENCE);
 			}
 		}
 	}
 
 	return STATUS_INVALID_HANDLE;
+}
+
+VOID NTAPI NtUnloadDllMemoryAndExitThread(IN HMEMORYMODULE BaseAddress, IN DWORD dwExitCode) {
+	NtUnloadDllMemory(BaseAddress);
+	RtlExitUserThread(dwExitCode);
 }
 
 
@@ -841,7 +882,7 @@ static VOID NTAPI RtlpInsertInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 	ULONG SizeOfTable = 0;
 	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(ImageBase);
 	PIMAGE_DATA_DIRECTORY dir = &headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
-	bool need = RtlIsWindowsVersionOrGreater(10, 0, 0);
+	bool need = RtlIsWindowsVersionOrGreater(6, 2, 0);
 
 	Index = (ULONG)need;
 	CurrentSize = InvertedTable->Count;
@@ -879,22 +920,23 @@ static VOID NTAPI RtlpInsertInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 
 #else
 	DWORD ptr, count;
-	bool IsWin10 = RtlIsWindowsVersionOrGreater(10, 0, 0);
-	ULONG Index = IsWin10 ? 1 : 0;
+	bool IsWin8OrGreater = RtlIsWindowsVersionOrGreater(6, 2, 0);
+	ULONG Index = IsWin8OrGreater ? 1 : 0;
 
 	if (InvertedTable->Count == InvertedTable->MaxCount) {
-		InvertedTable->Overflow = TRUE;
+		if (IsWin8OrGreater)InvertedTable->NextEntrySEHandlerTableEncoded = TRUE;
+		else InvertedTable->Overflow = TRUE;
 		return;
 	}
 	while (Index < InvertedTable->Count) {
-		if (ImageBase < (IsWin10 ?
+		if (ImageBase < (IsWin8OrGreater ?
 			((PRTL_INVERTED_FUNCTION_TABLE_ENTRY_64)&InvertedTable->Entries[Index])->ImageBase :
 			InvertedTable->Entries[Index].ImageBase))
 			break;
 		Index++;
 	}
 	if (Index != InvertedTable->Count) {
-		if (IsWin10) {
+		if (IsWin8OrGreater) {
 			RtlMoveMemory(&InvertedTable->Entries[Index + 1], &InvertedTable->Entries[Index],
 				(InvertedTable->Count - Index) * sizeof(RTL_INVERTED_FUNCTION_TABLE_ENTRY));
 		}
@@ -906,7 +948,7 @@ static VOID NTAPI RtlpInsertInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 	}
 
 	RtlCaptureImageExceptionValues(ImageBase, &ptr, &count);
-	if (IsWin10) {
+	if (IsWin8OrGreater) {
 		//memory layout is same as x64
 		PRTL_INVERTED_FUNCTION_TABLE_ENTRY_64 entry = (decltype(entry))&InvertedTable->Entries[Index];
 		entry->ExceptionDirectory = (PIMAGE_RUNTIME_FUNCTION_ENTRY)RtlEncodeSystemPointer((PVOID)ptr);
@@ -930,11 +972,11 @@ static VOID NTAPI RtlpRemoveInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 	ULONG CurrentSize;
 	ULONG Index;
 	//bool need = RtlIsWindowsVersionOrGreater(6, 2, 0);
-	bool IsWin10 = RtlIsWindowsVersionOrGreater(10, 0, 0);
+	bool IsWin8OrGreater = RtlIsWindowsVersionOrGreater(6, 2, 0);
 
 	CurrentSize = InvertedTable->Count;
 	for (Index = 0; Index < CurrentSize; Index += 1) {
-		if (ImageBase == (IsWin10 ?
+		if (ImageBase == (IsWin8OrGreater ?
 			((PRTL_INVERTED_FUNCTION_TABLE_ENTRY_64)&InvertedTable->Entries[Index])->ImageBase :
 			InvertedTable->Entries[Index].ImageBase))
 			break;
@@ -948,7 +990,7 @@ static VOID NTAPI RtlpRemoveInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 				&InvertedTable->Entries[Index + 1],
 				(CurrentSize - Index - 1) * sizeof(RTL_INVERTED_FUNCTION_TABLE_ENTRY));
 #else
-			if (IsWin10) {
+			if (IsWin8OrGreater) {
 				RtlMoveMemory(&InvertedTable->Entries[Index], &InvertedTable->Entries[Index + 1],
 					(CurrentSize - Index) * sizeof(RTL_INVERTED_FUNCTION_TABLE_ENTRY));
 			}
@@ -962,6 +1004,19 @@ static VOID NTAPI RtlpRemoveInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 		}
 		InvertedTable->Count--;
 		//if (need)_InterlockedIncrement(&InvertedTable->Epoch);
+	}
+
+	if (InvertedTable->Count != InvertedTable->MaxCount) {
+#ifdef _WIN64
+		//InvertedTable->Overflow = FALSE;
+#else
+		if (IsWin8OrGreater) {
+			InvertedTable->NextEntrySEHandlerTableEncoded = FALSE;
+		}
+		else {
+			InvertedTable->Overflow = FALSE;
+		}
+#endif
 	}
 
 	return;
@@ -1046,6 +1101,14 @@ static NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
 	return status;
 }
 
+static __forceinline bool NTAPI RtlIsModuleUnloaded(PLDR_DATA_TABLE_ENTRY entry) {
+	if (RtlIsWindowsVersionOrGreater(6, 2, 0)) {
+		return PLDR_DATA_TABLE_ENTRY_WIN8(entry)->DdagNode->State == LdrModulesUnloaded;
+	}
+	else {
+		return entry->DllBase == nullptr;
+	}	
+}
 static PVOID FindLdrpInvertedFunctionTable32() {
 	// _RTL_INVERTED_FUNCTION_TABLE						x86
 	//		Count										+0x0	????????
@@ -1064,20 +1127,20 @@ static PVOID FindLdrpInvertedFunctionTable32() {
 	_RTL_INVERTED_FUNCTION_TABLE_ENTRY_WIN7_32 entry{};
 	LPCSTR lpSectionName = ".data";
 	SEARCH_CONTEXT SearchContext{ SearchContext.MemoryBuffer = &entry,SearchContext.BufferLength = sizeof(entry) };
-	BYTE Offset = 0xC;
 	PLIST_ENTRY ListHead = &NtCurrentPeb()->Ldr->InMemoryOrderModuleList,
 		ListEntry = ListHead->Flink;
 	PLDR_DATA_TABLE_ENTRY CurEntry = nullptr;
 	DWORD SEHTable, SEHCount;
+	BYTE Offset = 0x20;	//sizeof(_RTL_INVERTED_FUNCTION_TABLE_ENTRY)*2
 	
-	//Does Windows 8 need fix?
-	if (RtlIsWindowsVersionOrGreater(10, 0, 0)) {
-		Offset = 0x20;	//sizeof(_RTL_INVERTED_FUNCTION_TABLE_ENTRY)*2
-		lpSectionName = ".mrdata";
-	}
+	if (RtlIsWindowsVersionOrGreater(10, 0, 0)) lpSectionName = ".mrdata";
+	else if (!RtlIsWindowsVersionOrGreater(6, 2, 0)) Offset = 0xC;
+	
 	while (ListEntry != ListHead) {
 		CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
 		ListEntry = ListEntry->Flink;
+		if (RtlIsModuleUnloaded(CurEntry))continue;					//skip unloaded module
+		if (IsValidMemoryModuleHandle(CurEntry->DllBase))continue;  //skip our memory module.
 		if (CurEntry->DllBase == hNtdll && Offset == 0x20)continue;	//Win10 skip first entry, if the base of ntdll is smallest.
 		hModule = (HMODULE)(hModule ? min(hModule, CurEntry->DllBase) : CurEntry->DllBase);
 	}
@@ -1117,7 +1180,14 @@ static PVOID FindLdrpInvertedFunctionTable64() {
 	PIMAGE_DATA_DIRECTORY dir = nullptr;
 	SEARCH_CONTEXT SearchContext{ SearchContext.MemoryBuffer = &entry,SearchContext.BufferLength = sizeof(entry) };
 
-	if (RtlIsWindowsVersionOrGreater(10, 0, 0)) {
+	//Windows 8
+	if (RtlVerifyVersion(6, 2, 0, RTL_VERIFY_FLAGS_MAJOR_VERSION | RTL_VERIFY_FLAGS_MINOR_VERSION)) {
+		hModule = hNtdll;
+		ModuleHeaders = NtdllHeaders;
+		//lpSectionName = ".data";
+	}
+	//Windows 8.1 ~ Windows 10
+	else if (RtlIsWindowsVersionOrGreater(6, 3, 0)) {
 		hModule = hNtdll;
 		ModuleHeaders = NtdllHeaders;
 		lpSectionName = ".mrdata";
@@ -1129,6 +1199,8 @@ static PVOID FindLdrpInvertedFunctionTable64() {
 		while (ListEntry != ListHead) {
 			CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 			ListEntry = ListEntry->Flink;
+			//Make sure the smallest base address is not our memory module
+			if (IsValidMemoryModuleHandle(CurEntry->DllBase))continue;
 			hModule = (HMODULE)(hModule ? min(hModule, CurEntry->DllBase) : CurEntry->DllBase);
 		}
 		ModuleHeaders = RtlImageNtHeader(hModule);
@@ -1403,7 +1475,39 @@ int NTAPI RtlCaptureImageExceptionValues(PVOID BaseAddress, PDWORD SEHandlerTabl
 	return 0;
 }
 
+#define MEMORY_FEATURE_SUPPORT_VERSION				0x00000001
+#define MEMORY_FEATURE_MODULE_BASEADDRESS_INDEX		0x00000002
+#define MEMORY_FEATURE_LDRP_HEAP					0x00000004
+#define MEMORY_FEATURE_LDRP_HASH_TABLE				0x00000008
+#define MEMORY_FEATURE_INVERTED_FUNCTION_TABLE		0x00000010
+#define MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA			0x00000020
+NTSTATUS NTAPI NtQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures) {
+	static DWORD features = 0;
+	NTSTATUS status = STATUS_SUCCESS;
+	PVOID pfn = nullptr;
+	bool value = false;
+	__try {
+		if (features) {
+			*pFeatures = features;
+			return status;
+		} 
+
+		if (RtlFindLdrpModuleBaseAddressIndex())features |= MEMORY_FEATURE_MODULE_BASEADDRESS_INDEX;
+		if (RtlFindtLdrpHeap())features |= MEMORY_FEATURE_LDRP_HEAP;
+		if (RtlFindLdrpHashTable())features |= MEMORY_FEATURE_LDRP_HASH_TABLE;
+		if (RtlFindLdrpInvertedFunctionTable())features |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
+		if (NT_SUCCESS(RtlFindLdrpHandleTlsData(&pfn, &value)) && pfn)features |= MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA;
+
+		if (features)features |= MEMORY_FEATURE_SUPPORT_VERSION;
+		*pFeatures = features;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = GetExceptionCode();
+	}
+	return status;
+}
+
 #ifndef _WIN64
 #undef RtlCompareMemory
-#undef FindLdrpInvertedFunctionTable
 #endif
+#undef FindLdrpInvertedFunctionTable
