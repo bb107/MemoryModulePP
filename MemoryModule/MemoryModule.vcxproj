@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="LoadDllMemoryApi.cpp" />
     <ClCompile Include="MemoryModule.cpp" />
     <ClCompile Include="Native.cpp" />
     <ClCompile Include="NativeFunctionsInternal.cpp" />

@@ -1,72 +1,49 @@
 #pragma once
 #include <Windows.h>
-typedef PVOID HMEMORYMODULE, HMEMORYRSRC;
+typedef HMODULE HMEMORYMODULE;
+typedef PVOID HMEMORYRSRC;
+
+#define MemoryModuleToModule(_hMemoryModule_) (HMODULE(_hMemoryModule_))
+
+#ifndef NT_SUCCESS
+#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#endif
 
 //Deprecated API
 #ifndef _DEPRECATED
-/**
- * Load DLL from memory location with the given size.
- *
- * All dependencies are resolved using default LoadLibrary/GetProcAddress
- * calls through the Windows API.
- */
+
 NOT_BUILD_WINDOWS_DEPRECATE
-__drv_preferredFunction("NtLoadDllMemory*", "Deprecated. Use NtLoadDllMemory or NtLoadDllMemoryEx.")
+__drv_preferredFunction("LoadLibraryMemory", "Deprecated. Use LoadLibraryMemory.")
 HMEMORYMODULE MemoryLoadLibrary(const void*);
 
-/**
- * Get address of exported method. Supports loading both by name and by
- * ordinal value.
- */
 NOT_BUILD_WINDOWS_DEPRECATE
 __drv_preferredFunction("GetProcAddress", "Deprecated. Use Win32API GetProcAddress.")
 FARPROC MemoryGetProcAddress(HMEMORYMODULE, LPCSTR);
 
-/**
- * Free previously loaded DLL.
- */
 NOT_BUILD_WINDOWS_DEPRECATE
-__drv_preferredFunction("NtUnloadDllMemory", "Deprecated. Use NtUnloadDllMemory.")
+__drv_preferredFunction("FreeLibrayMemory", "Deprecated. Use FreeLibrayMemory.")
 bool MemoryFreeLibrary(HMEMORYMODULE);
 
-/**
- * Find the location of a resource with the specified type and name.
- */
 NOT_BUILD_WINDOWS_DEPRECATE
 __drv_preferredFunction("FindResource", "Deprecated. Use Win32API FindResource.")
 HMEMORYRSRC MemoryFindResource(HMEMORYMODULE, LPCTSTR, LPCTSTR);
 
-/**
- * Find the location of a resource with the specified type, name and language.
- */
 NOT_BUILD_WINDOWS_DEPRECATE
 __drv_preferredFunction("FindResourceEx", "Deprecated. Use Win32API FindResourceEx.")
 HMEMORYRSRC MemoryFindResourceEx(HMEMORYMODULE, LPCTSTR, LPCTSTR, WORD);
 
-/**
- * Get the size of the resource in bytes.
- */
 NOT_BUILD_WINDOWS_DEPRECATE
 __drv_preferredFunction("SizeofResource", "Deprecated. Use Win32API SizeofResource.")
 DWORD MemorySizeofResource(HMEMORYMODULE, HMEMORYRSRC);
 
-/**
- * Get a pointer to the contents of the resource.
- */
 NOT_BUILD_WINDOWS_DEPRECATE
 __drv_preferredFunction("LoadResource", "Deprecated. Use Win32API LoadResource.")
 LPVOID MemoryLoadResource(HMEMORYMODULE, HMEMORYRSRC);
 
-/**
- * Load a string resource.
- */
 NOT_BUILD_WINDOWS_DEPRECATE
 __drv_preferredFunction("LoadString*", "Deprecated. Use Win32API LoadStringA or LoadStringW.")
 int MemoryLoadString(HMEMORYMODULE, UINT, LPTSTR, int);
 
-/**
- * Load a string resource with a given language.
- */
 NOT_BUILD_WINDOWS_DEPRECATE
 __drv_preferredFunction("LoadString*", "Deprecated. Use Win32API LoadStringA or LoadStringW.")
 int MemoryLoadStringEx(HMEMORYMODULE, UINT, LPTSTR, int, WORD);
@@ -103,6 +80,9 @@ NTSTATUS NTAPI NtLoadDllMemory(
 
 //If this flag is specified, this routine will not fail even if the call to LdrpTlsData fails.
 #define LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS			0x20000000
+
+//If this flag is specified, the input image buffer will not be checked before loading.
+#define LOAD_FLAGS_PASS_IMAGE_CHECK					0x40000000
 
 //If this flag is specified, exception handling will not be supported.
 #define LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION		0x00000001
@@ -157,15 +137,21 @@ extern "C" {
     __declspec(noreturn) VOID NTAPI NtUnloadDllMemoryAndExitThread(IN HMEMORYMODULE BaseAddress, IN DWORD dwExitCode);
 }
 
-#define LoadLibraryMemory NtLoadDllMemory
-#define FreeLibraryMemory NtUnloadDllMemory
+HMEMORYMODULE WINAPI LoadLibraryMemory(PVOID BufferAddress);
+
+HMEMORYMODULE WINAPI LoadLibraryMemoryExA(PVOID BufferAddress, size_t Reserved, LPCSTR DllBaseName, LPCSTR DllFullName, DWORD Flags);
+
+HMEMORYMODULE WINAPI LoadLibraryMemoryExW(PVOID BufferAddress, size_t Reserved, LPCWSTR DllBaseName, LPCWSTR DllFullName, DWORD Flags);
+
+BOOL WINAPI FreeLibraryMemory(HMEMORYMODULE hMemoryModule);
+
 #define FreeLibraryMemoryAndExitThread NtUnloadDllMemoryAndExitThread
 #ifdef UNICODE
 #define NtLoadDllMemoryEx NtLoadDllMemoryExW
-#define LoadLibraryMemoryEx NtLoadDllMemoryExW
+#define LoadLibraryMemoryEx LoadLibraryMemoryExW
 #else
 #define NtLoadDllMemoryEx NtLoadDllMemoryExA
-#define LoadLibraryMemoryEx NtLoadDllMemoryExA
+#define LoadLibraryMemoryEx LoadLibraryMemoryExA
 #endif
 
 

@@ -28,7 +28,7 @@ static PIMAGE_NT_HEADERS WINAPI GetImageNtHeaders(PMEMORYMODULE pModule) {
 	if (pModule->Signature != MEMORY_MODULE_SIGNATURE)return nullptr;
 	PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)((LPBYTE)pModule - pModule->SizeofHeaders);
 	PIMAGE_NT_HEADERS headers = (PIMAGE_NT_HEADERS)((LPBYTE)dos + dos->e_lfanew);
-	if (headers->OptionalHeader.ImageBase /*+ pModule->headers_align*/ != (ULONG64)pModule->codeBase)return nullptr;
+	if (headers->OptionalHeader.ImageBase != (ULONG64)pModule->codeBase)return nullptr;
 	return headers;
 }
 
@@ -109,53 +109,35 @@ static int ProtectionFlags[2][2][2] = {
 		{PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE},
 	},
 };
-static SIZE_T GetRealSectionSize(PMEMORYMODULE module, PIMAGE_SECTION_HEADER section);
-static VOID FinalSectionsProtect(PMEMORYMODULE module) {
-	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
-	PIMAGE_SECTION_HEADER sections = IMAGE_FIRST_SECTION(headers);
-	DWORD protect, oldProtect;
-	bool executable, readable, writeable;
-#ifdef _WIN64
-	uintptr_t imageOffset = ((uintptr_t)headers->OptionalHeader.ImageBase & 0xffffffff00000000);
-#else
-	static const uintptr_t imageOffset = 0;
-#endif
-	for (WORD i = 0; i < headers->FileHeader.NumberOfSections; ++i, ++sections) {
-		executable = (sections->Characteristics & IMAGE_SCN_MEM_EXECUTE);
-		readable = (sections->Characteristics & IMAGE_SCN_MEM_READ);
-		writeable = (sections->Characteristics & IMAGE_SCN_MEM_WRITE);
-		protect = ProtectionFlags[executable][readable][writeable];
-		if (sections->Characteristics & IMAGE_SCN_MEM_NOT_CACHED) protect |= PAGE_NOCACHE;
-		VirtualProtect((LPVOID)((uintptr_t)sections->Misc.PhysicalAddress | imageOffset),
-			GetRealSectionSize(module, sections), protect, &oldProtect);
-	}
-	return;
-}
 
 static BOOL CopySections(const unsigned char* data, PMEMORYMODULE module) {
-	LPBYTE codeBase = module->codeBase;
 	LPVOID dest;
 	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
-	PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(headers);
+	PIMAGE_SECTION_HEADER section = headers ? IMAGE_FIRST_SECTION(headers) : nullptr;
 	size_t alloc_size = 0;
 	bool cp = false;
+
+	if (!headers) {
+		SetLastError(ERROR_BAD_EXE_FORMAT);
+		return FALSE;
+	}
 	for (int i = 0; i < headers->FileHeader.NumberOfSections; i++, section++) {
 		alloc_size = headers->OptionalHeader.SectionAlignment;
 		cp = false;
 		if (section->SizeOfRawData) {
 			__try {
-				ProbeForRead(data, static_cast<size_t>(section->PointerToRawData) + section->SizeOfRawData);
+				ProbeForRead(data + static_cast<size_t>(section->PointerToRawData), section->SizeOfRawData);
 			}
 			__except (EXCEPTION_EXECUTE_HANDLER) {
+				SetLastError(ERROR_BAD_EXE_FORMAT);
 				return FALSE;
 			}
 			alloc_size = section->SizeOfRawData;
 			cp = true;
 		}
 		if (alloc_size) {
-			if (!(dest = VirtualAlloc(codeBase + section->VirtualAddress, alloc_size, MEM_COMMIT, PAGE_READWRITE))) {
-				//section = IMAGE_FIRST_SECTION(headers);
-				//for (int j = 0; j < i; ++j, ++section)VirtualFree(codeBase + section->VirtualAddress, 0, MEM_RELEASE);
+			if (!(dest = VirtualAlloc((LPSTR)headers->OptionalHeader.ImageBase + section->VirtualAddress, alloc_size, MEM_COMMIT, PAGE_READWRITE))) {
+				SetLastError(ERROR_OUTOFMEMORY);
 				return FALSE;
 			}
 			section->Misc.PhysicalAddress = (DWORD)((uintptr_t)dest & 0xffffffff);
@@ -184,18 +166,34 @@ static SIZE_T GetRealSectionSize(PMEMORYMODULE module, PIMAGE_SECTION_HEADER sec
 }
 
 static BOOL FinalizeSection(PMEMORYMODULE module, PSECTIONFINALIZEDATA sectionData) {
+	DWORD protect, oldProtect;
+	BOOL executable;
+	BOOL readable;
+	BOOL writeable;
+	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
+
 	if (!sectionData->size) return TRUE;
 	if (sectionData->characteristics & IMAGE_SCN_MEM_DISCARDABLE) {
 		// section is not needed any more and can safely be freed
 		if (sectionData->address == sectionData->alignedAddress &&
-			(sectionData->last || GetImageNtHeaders(module)->OptionalHeader.SectionAlignment == module->pageSize || !(sectionData->size % module->pageSize))) {
-#pragma warning (disable:6250)
+			(sectionData->last || headers->OptionalHeader.SectionAlignment == module->pageSize ||
+				(sectionData->size % module->pageSize) == 0)
+			)
+#pragma warning(disable:6250)
 			VirtualFree(sectionData->address, sectionData->size, MEM_DECOMMIT);
-#pragma warning (default:6250)
-		}
+#pragma warning(default:6250)
 		return TRUE;
 	}
-	return TRUE;
+
+	// determine protection flags based on characteristics
+	executable = (sectionData->characteristics & IMAGE_SCN_MEM_EXECUTE) != 0;
+	readable = (sectionData->characteristics & IMAGE_SCN_MEM_READ) != 0;
+	writeable = (sectionData->characteristics & IMAGE_SCN_MEM_WRITE) != 0;
+	protect = ProtectionFlags[executable][readable][writeable];
+	if (sectionData->characteristics & IMAGE_SCN_MEM_NOT_CACHED) protect |= PAGE_NOCACHE;
+
+	// change memory access flags
+	return VirtualProtect(sectionData->address, sectionData->size, protect, &oldProtect);
 }
 
 static BOOL FinalizeSections(PMEMORYMODULE module) {
@@ -214,16 +212,17 @@ static BOOL FinalizeSections(PMEMORYMODULE module) {
 	sectionData.last = FALSE;
 	section++;
 
-	// loop through all sections and change access flags
 	for (int i = 1; i < headers->FileHeader.NumberOfSections; i++, section++) {
 		LPVOID sectionAddress = (LPVOID)((uintptr_t)section->Misc.PhysicalAddress | imageOffset);
 		LPVOID alignedAddress = AlignAddressDown(sectionAddress, module->pageSize);
 		SIZE_T sectionSize = GetRealSectionSize(module, section);
 		if (sectionData.alignedAddress == alignedAddress || (uintptr_t)sectionData.address + sectionData.size > (uintptr_t) alignedAddress) {
-			if (!(section->Characteristics & IMAGE_SCN_MEM_DISCARDABLE) || !(sectionData.characteristics & IMAGE_SCN_MEM_DISCARDABLE))
+			if ((section->Characteristics & IMAGE_SCN_MEM_DISCARDABLE) == 0 || (sectionData.characteristics & IMAGE_SCN_MEM_DISCARDABLE) == 0) {
 				sectionData.characteristics = (sectionData.characteristics | section->Characteristics) & ~IMAGE_SCN_MEM_DISCARDABLE;
-			else
+			}
+			else {
 				sectionData.characteristics |= section->Characteristics;
+			}
 			sectionData.size = (((uintptr_t)sectionAddress) + ((uintptr_t)sectionSize)) - (uintptr_t)sectionData.address;
 			continue;
 		}
@@ -293,68 +292,80 @@ static BOOL PerformBaseRelocation(PMEMORYMODULE module, ptrdiff_t delta) {
 	return TRUE;
 }
 
+static BOOL GetImportAddressTableEntryCountAndVerify(PMEMORYMODULE module, LPDWORD Count, PIMAGE_IMPORT_DESCRIPTOR* IAT) {
+	__try {
+		PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
+		PIMAGE_DATA_DIRECTORY dir = GET_HEADER_DICTIONARY(headers, IMAGE_DIRECTORY_ENTRY_IMPORT);
+		PIMAGE_IMPORT_DESCRIPTOR iat = *IAT = (dir && dir->Size) ? decltype(iat)(headers->OptionalHeader.ImageBase + dir->VirtualAddress) : nullptr;
+		*Count = 0;
+		if (!iat)return TRUE;
+		ProbeForRead(iat, sizeof(IMAGE_IMPORT_DESCRIPTOR));
+		while (iat->Name) {
+			++*Count;
+			++iat;
+			ProbeForRead(iat, sizeof(IMAGE_IMPORT_DESCRIPTOR));
+		}
+		return TRUE;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		SetLastError(RtlNtStatusToDosError(GetExceptionCode()));
+		return FALSE;
+	}
+}
+static void FreeLoadedModule(PMEMORYMODULE module) {
+	for (DWORD i = 0; i < module->dwModulesCount; ++i) FreeLibrary(module->hModulesList[i]);
+	delete[]module->hModulesList;
+	module->hModulesList = nullptr;
+	module->dwModulesCount = 0;
+	return;
+}
 static BOOL BuildImportTable(PMEMORYMODULE module) {
 	unsigned char* codeBase = module->codeBase;
 	PIMAGE_IMPORT_DESCRIPTOR importDesc;
-	BOOL result = TRUE;
-	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
-	PIMAGE_DATA_DIRECTORY directory = GET_HEADER_DICTIONARY(headers, IMAGE_DIRECTORY_ENTRY_IMPORT);
-	if (directory->Size == 0) {
-		return TRUE;
+	DWORD count;
+	if (!GetImportAddressTableEntryCountAndVerify(module, &count, &importDesc)) {
+		SetLastError(ERROR_BAD_EXE_FORMAT);
+		return FALSE;
 	}
-
-	importDesc = (PIMAGE_IMPORT_DESCRIPTOR)(codeBase + directory->VirtualAddress);
-	for (; !IsBadReadPtr(importDesc, sizeof(IMAGE_IMPORT_DESCRIPTOR)) && importDesc->Name; importDesc++) {
-		uintptr_t* thunkRef;
-		FARPROC* funcRef;
-		HMODULE* tmp;
-		HMODULE handle = LoadLibraryA((LPCSTR)(codeBase + importDesc->Name));
-		if (!handle) {
-			SetLastError(ERROR_MOD_NOT_FOUND);
-			result = FALSE;
-			break;
-		}
-
-		if (!(tmp = (HMODULE*)realloc(module->hModulesList, (static_cast<size_t>(module->dwModulesCount) + 1)* (sizeof(HMODULE))))) {
-			FreeLibrary(handle);
-			SetLastError(ERROR_OUTOFMEMORY);
-			result = FALSE;
-			break;
-		}
-		module->hModulesList = tmp;
-
-		module->hModulesList[module->dwModulesCount++] = handle;
-		if (importDesc->OriginalFirstThunk) {
-			thunkRef = (uintptr_t*)(codeBase + importDesc->OriginalFirstThunk);
+	if (!importDesc || !count)return TRUE;
+	if (!(module->hModulesList = new HMODULE[count])) {
+		SetLastError(ERROR_OUTOFMEMORY);
+		return FALSE;
+	}
+	RtlZeroMemory(module->hModulesList, sizeof(HMODULE) * count);
+	__try {
+		for (DWORD i = 0; i < count; ++i, ++importDesc) {
+			uintptr_t* thunkRef;
+			FARPROC* funcRef;
+			HMODULE handle = LoadLibraryA((LPCSTR)(codeBase + importDesc->Name));
+			if (!handle) {
+				FreeLoadedModule(module);
+				SetLastError(ERROR_MOD_NOT_FOUND);
+				return FALSE;
+			}
+			module->hModulesList[module->dwModulesCount++] = handle;
+			thunkRef = (uintptr_t*)(codeBase + (importDesc->OriginalFirstThunk ? importDesc->OriginalFirstThunk : importDesc->FirstThunk));
 			funcRef = (FARPROC*)(codeBase + importDesc->FirstThunk);
-		}
-		else {
-			// no hint table
-			thunkRef = (uintptr_t*)(codeBase + importDesc->FirstThunk);
-			funcRef = (FARPROC*)(codeBase + importDesc->FirstThunk);
-		}
-		for (; *thunkRef; thunkRef++, funcRef++) {
-			if (IMAGE_SNAP_BY_ORDINAL(*thunkRef)) {
-				*funcRef = GetProcAddress(handle, (LPCSTR)IMAGE_ORDINAL(*thunkRef));
+			while (*thunkRef) {
+				*funcRef = GetProcAddress(
+					handle,
+					IMAGE_SNAP_BY_ORDINAL(*thunkRef) ? (LPCSTR)IMAGE_ORDINAL(*thunkRef) : (LPCSTR)PIMAGE_IMPORT_BY_NAME(codeBase + (*thunkRef))->Name
+				);
+				if (!*funcRef) {
+					FreeLoadedModule(module);
+					SetLastError(ERROR_PROC_NOT_FOUND);
+					return FALSE;
+				}
+				++thunkRef;
+				++funcRef;
 			}
-			else {
-				PIMAGE_IMPORT_BY_NAME thunkData = (PIMAGE_IMPORT_BY_NAME)(codeBase + (*thunkRef));
-				*funcRef = GetProcAddress(handle, (LPCSTR)&thunkData->Name);
-			}
-			if (*funcRef == 0) {
-				result = FALSE;
-				break;
-			}
-		}
-
-		if (!result) {
-			FreeLibrary(handle);
-			SetLastError(ERROR_PROC_NOT_FOUND);
-			break;
 		}
 	}
-
-	return result;
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		SetLastError(RtlNtStatusToDosError(GetExceptionCode()));
+		return FALSE;
+	}
+	return TRUE;
 }
 
 HMEMORYMODULE MemoryLoadLibrary(const void* data) {
@@ -423,7 +434,7 @@ HMEMORYMODULE MemoryLoadLibrary(const void* data) {
 		SetLastError(ERROR_BAD_EXE_FORMAT);
 		return nullptr;
 	}
-	alignedImageSize += headers_align = (DWORD)AlignValueUp(sizeof(HMEMORYMODULE) + old_header->OptionalHeader.SizeOfHeaders, sysInfo.dwPageSize);
+	alignedImageSize += headers_align = (DWORD)AlignValueUp(sizeof(MEMORYMODULE) + old_header->OptionalHeader.SizeOfHeaders, sysInfo.dwPageSize);
 
 	// reserve memory for image of library
 	// XXX: is it correct to commit the complete memory region at once?
@@ -494,7 +505,6 @@ HMEMORYMODULE MemoryLoadLibrary(const void* data) {
 	// mark memory pages depending on section headers and release
 	// sections that are marked as "discardable"
 	if (!FinalizeSections(hMemoryModule)) goto error;
-	FinalSectionsProtect(hMemoryModule);
 
 	// TLS callbacks are executed BEFORE the main loading
 	if (!ExecuteTLS(hMemoryModule)) goto error;
@@ -509,16 +519,16 @@ HMEMORYMODULE MemoryLoadLibrary(const void* data) {
 			}
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
-			SetLastError(ERROR_ACCESS_DENIED);
+			SetLastError(RtlNtStatusToDosError(GetExceptionCode()));
 			goto error;
 		}
 		hMemoryModule->initialized = TRUE;
 	}
 	
-	return base;
+	return (HMEMORYMODULE)base;
 error:
 	// cleanup
-	MemoryFreeLibrary(hMemoryModule);
+	MemoryFreeLibrary((HMEMORYMODULE)base);
 	return nullptr;
 }
 
@@ -533,19 +543,18 @@ bool MemoryFreeLibrary(HMEMORYMODULE mod) {
 		(*DllEntry)((HINSTANCE)module->codeBase, DLL_PROCESS_DETACH, 0);
 	}
 	if (module->nameExportsTable)delete[] module->nameExportsTable;
-	if (module->hModulesList != nullptr) {
-		int i;
-		for (i = 0; i < module->dwModulesCount; i++) {
+	if (module->hModulesList) {
+		for (DWORD i = 0; i < module->dwModulesCount; ++i) {
 			if (module->hModulesList[i]) {
 				FreeLibrary(module->hModulesList[i]);
 			}
 		}
-		free(module->hModulesList);
+		delete[] module->hModulesList;
 	}
 #ifdef _WIN64
 	FreePointerList(module->blockedMemory);
 #endif
-	if (module->codeBase != nullptr) VirtualFree(mod, 0, MEM_RELEASE);
+	if (module->codeBase) VirtualFree(mod, 0, MEM_RELEASE);
 	return true;
 }
 
@@ -570,7 +579,11 @@ FARPROC MemoryGetProcAddress(HMEMORYMODULE mod, LPCSTR name) {
 	DWORD idx = 0;
 	PIMAGE_EXPORT_DIRECTORY exports;
 	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(module);
-	PIMAGE_DATA_DIRECTORY directory = GET_HEADER_DICTIONARY(headers, IMAGE_DIRECTORY_ENTRY_EXPORT);
+	PIMAGE_DATA_DIRECTORY directory = headers ? GET_HEADER_DICTIONARY(headers, IMAGE_DIRECTORY_ENTRY_EXPORT) : nullptr;
+	if (!headers) {
+		SetLastError(ERROR_INVALID_HANDLE);
+		return nullptr;
+	}
 	if (directory->Size == 0) {
 		// no export table found
 		SetLastError(ERROR_PROC_NOT_FOUND);
@@ -756,13 +769,18 @@ static PIMAGE_RESOURCE_DIRECTORY_ENTRY _MemorySearchResourceEntry(void* root, PI
 HMEMORYRSRC MemoryFindResourceEx(HMEMORYMODULE module, LPCTSTR name, LPCTSTR type, WORD language) {
 	PMEMORYMODULE mod = MapMemoryModuleHandle(module);
 	unsigned char* codeBase = mod->codeBase;
-	PIMAGE_DATA_DIRECTORY directory = GET_HEADER_DICTIONARY(GetImageNtHeaders(mod), IMAGE_DIRECTORY_ENTRY_RESOURCE);
+	PIMAGE_NT_HEADERS headers = GetImageNtHeaders(mod);
+	PIMAGE_DATA_DIRECTORY directory = headers ? GET_HEADER_DICTIONARY(headers, IMAGE_DIRECTORY_ENTRY_RESOURCE) : nullptr;
 	PIMAGE_RESOURCE_DIRECTORY rootResources;
 	PIMAGE_RESOURCE_DIRECTORY nameResources;
 	PIMAGE_RESOURCE_DIRECTORY typeResources;
 	PIMAGE_RESOURCE_DIRECTORY_ENTRY foundType;
 	PIMAGE_RESOURCE_DIRECTORY_ENTRY foundName;
 	PIMAGE_RESOURCE_DIRECTORY_ENTRY foundLanguage;
+	if (!headers) {
+		SetLastError(ERROR_INVALID_HANDLE);
+		return nullptr;
+	}
 	if (directory->Size == 0) {
 		// no resource table found
 		SetLastError(ERROR_RESOURCE_DATA_NOT_FOUND);

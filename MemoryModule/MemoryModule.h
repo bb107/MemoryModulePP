@@ -24,7 +24,7 @@ typedef struct POINTER_LIST {
 	void* address;
 } POINTER_LIST;
 #endif
-typedef void* HMEMORYMODULE;
+typedef HMODULE HMEMORYMODULE;
 typedef void* HMEMORYRSRC;
 typedef struct _MEMORYMODULE {
 	/*

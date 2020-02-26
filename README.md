@@ -6,25 +6,18 @@ MemoryModulePP, used to load a DLL from memory. MemoryModulePP is compatible wit
 
 **MemoryModulePP is developed based on [MemoryModule][ref1].**
 
-**This repository is under development.**
-
-
 > In order to support 32-bit dll exception handling, the dll should enable the /SAFESEH linker option, 
 > otherwise the exception handler cannot pass the RtlIsValidHandler () check when an exception occurs
 
-## New Features
-  - Support Win8
-
 ## Features
-  - Compatible with Win32 API (GetModuleHandleA/W/Ex GetModuleFileNameA/W/Ex GetProcAddress and any Resource API)
+  - Compatible with Win32 API (GetModuleHandle, GetModuleFileName, GetProcAddress and any Resource API)
   - Support for C++ exceptions and SEH
-  - Compatible with Win7 and Win10
   - Optimized MEMORYMODULE structure
   - Use reference counting, repeated loading of the same module will update the reference counting, please refer to NtLoadDllMemoryExW
   - The above features can be turned off through the dwFlags parameter of NtLoadDllMemoryExW
   - Support for TLS(Thread Local Storage)
   - DllMain can receive four types of notifications
-  - Support Win10 forward export
+  - Support forward export
 
 ## Tech
 
@@ -34,13 +27,11 @@ MemoryModulePP uses many open source projects and references to work properly:
 * [MemoryModule][ref1] - Load dll from memory, reference and improve part of this repository's code.
 * [Blackbone][ref2] - Windows memory hacking library, Referenced the idea of exception handling.
 * [Exceptions on Windows x64][ref3] - How Windows x64 Exception Handling Works. (Russian)
-* [Reactos][ref4] - How WIndows loads dll.
+* [Reactos][ref4] - How Windows loads dll.
 
 ## Todos
+ - Looking for a good way to locate the LdrpHandleTlsData function, or implement this function.
 
- - Compatible with Win8 and x86 architecture
- - Improve MEMORYPODULE structure
- - Improve NtLoadDllMemoryExW function
 
 
    [ref0]: <https://www.vergiliusproject.com>
@@ -48,4 +39,5 @@ MemoryModulePP uses many open source projects and references to work properly:
    [ref2]: <https://github.com/DarthTon/Blackbone.git>
    [ref3]: <https://habr.com/en/company/aladdinrd/blog/321868/>
    [ref4]: <https://doxygen.reactos.org/>
+   [ref5]: <https://github.com/processhacker/processhacker.git>
    

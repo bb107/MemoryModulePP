@@ -1,0 +1,38 @@
+#include "LoadDllMemoryApi.h"
+#include "Native.h"
+
+HMEMORYMODULE WINAPI LoadLibraryMemory(PVOID BufferAddress) {
+	HMEMORYMODULE hMemoryModule = nullptr;
+	NTSTATUS status = NtLoadDllMemory(&hMemoryModule, BufferAddress, 0);
+	if (!NT_SUCCESS(status)) {
+		SetLastError(RtlNtStatusToDosError(status));
+	}
+	return hMemoryModule;
+}
+
+HMEMORYMODULE WINAPI LoadLibraryMemoryExA(PVOID BufferAddress, size_t Reserved, LPCSTR DllBaseName, LPCSTR DllFullName, DWORD Flags) {
+	HMEMORYMODULE hMemoryModule = nullptr;
+	NTSTATUS status = NtLoadDllMemoryExA(&hMemoryModule, nullptr, Flags, BufferAddress, Reserved, DllBaseName, DllFullName);
+	if (!NT_SUCCESS(status)) {
+		SetLastError(RtlNtStatusToDosError(status));
+	}
+	return hMemoryModule;
+}
+
+HMEMORYMODULE WINAPI LoadLibraryMemoryExW(PVOID BufferAddress, size_t Reserved, LPCWSTR DllBaseName, LPCWSTR DllFullName, DWORD Flags) {
+	HMEMORYMODULE hMemoryModule = nullptr;
+	NTSTATUS status = NtLoadDllMemoryExW(&hMemoryModule, nullptr, Flags, BufferAddress, Reserved, DllBaseName, DllFullName);
+	if (!NT_SUCCESS(status)) {
+		SetLastError(RtlNtStatusToDosError(status));
+	}
+	return hMemoryModule;
+}
+
+BOOL WINAPI FreeLibraryMemory(HMEMORYMODULE hMemoryModule) {
+	NTSTATUS status = NtUnloadDllMemory(hMemoryModule);
+	if (!NT_SUCCESS(status)) {
+		SetLastError(RtlNtStatusToDosError(status));
+		return FALSE;
+	}
+	return TRUE;
+}

@@ -421,6 +421,9 @@ NTSTATUS NTAPI NtLoadDllMemory(
 //If this flag is specified, this routine will not fail even if the call to LdrpTlsData fails.
 #define LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS			0x20000000
 
+//If this flag is specified, the input image buffer will not be checked before loading.
+#define LOAD_FLAGS_PASS_IMAGE_CHECK					0x40000000
+
 //If this flag is specified, exception handling will not be supported.
 #define LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION		0x00000001
 

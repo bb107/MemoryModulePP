@@ -82,7 +82,7 @@ int __test__() {
 static thread_local int x = 0xffccffdd;
 DWORD WINAPI Thread(PVOID) {
     printf("[1] ThreadLocalStoragePointer = %p\n", NtCurrentTeb()->ThreadLocalStoragePointer);
-    return x == 0xffccffdd ? 0 : 1; const auto i = offsetof(CONTEXT, Dr0);
+    return x == 0xffccffdd ? 0 : 1;
 }
 
 int thread() {
