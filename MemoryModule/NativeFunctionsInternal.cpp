@@ -100,11 +100,19 @@ static PLIST_ENTRY NTAPI RtlFindLdrpHashTable() {
 	static PLIST_ENTRY list = nullptr;
 	if (list) return list;
 
-	PLDR_DATA_TABLE_ENTRY CurEntry = RtlFindNtdllLdrEntry();
-	if (!CurEntry)return list;
-
-	if (CurEntry->HashLinks.Flink == &CurEntry->HashLinks)return list;
-	list = (decltype(list))((size_t)CurEntry->HashLinks.Flink - LdrHashEntry(CurEntry->BaseDllName) * sizeof(_LIST_ENTRY));
+	PLIST_ENTRY head = &NtCurrentPeb()->Ldr->InInitializationOrderModuleList, entry = head->Flink;
+	PLDR_DATA_TABLE_ENTRY CurEntry = nullptr;
+	while (head != entry) {
+		CurEntry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, LDR_DATA_TABLE_ENTRY::InInitializationOrderLinks);
+		entry = entry->Flink;
+		if (CurEntry->HashLinks.Flink == &CurEntry->HashLinks)continue;
+		list = CurEntry->HashLinks.Flink;
+		if (list->Flink == &CurEntry->HashLinks) {
+			list = (decltype(list))((size_t)CurEntry->HashLinks.Flink - LdrHashEntry(CurEntry->BaseDllName) * sizeof(_LIST_ENTRY));
+			break;
+		}
+		list = nullptr;
+	}
 	return list;
 }
 
