@@ -242,19 +242,31 @@ static size_t NTAPI NtLdrDataTableEntrySize() {
 	}
 }
 
-static PRTL_BALANCED_NODE NTAPI RtlFindLdrpModuleBaseAddressIndex() {
-	static PRTL_BALANCED_NODE LdrpModuleBaseAddressIndex = nullptr;
+static PRTL_RB_TREE NTAPI RtlFindLdrpModuleBaseAddressIndex() {
+	static PRTL_RB_TREE LdrpModuleBaseAddressIndex = nullptr;
 	if (LdrpModuleBaseAddressIndex)return LdrpModuleBaseAddressIndex;
 
-	PLDR_DATA_TABLE_ENTRY ntdll = RtlFindNtdllLdrEntry();
-	PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(ntdll);
+	PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(RtlFindNtdllLdrEntry());
+	PRTL_BALANCED_NODE node = nullptr;
+	if (!nt10 || !RtlIsWindowsVersionOrGreater(6, 2, 0))return nullptr;
+	node = &nt10->BaseAddressIndexNode;
+	while (node->ParentValue & (~7)) node = decltype(node)(node->ParentValue & (~7));
 
-	if (!ntdll || !RtlIsWindowsVersionOrGreater(6, 2, 0))return nullptr;
-	LdrpModuleBaseAddressIndex = &nt10->BaseAddressIndexNode;
-	while (LdrpModuleBaseAddressIndex->ParentValue) {
-		LdrpModuleBaseAddressIndex = decltype(LdrpModuleBaseAddressIndex)(LdrpModuleBaseAddressIndex->ParentValue & (~7));
+	if (!node->Red) {
+		BYTE count = 0;
+		PRTL_RB_TREE tmp = nullptr;
+		SEARCH_CONTEXT SearchContext{};
+		SearchContext.MemoryBuffer = &node;
+		SearchContext.BufferLength = sizeof(size_t);
+		while (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection((HMODULE)nt10->DllBase, ".data", &SearchContext))) {
+			if (count++)return nullptr;
+			tmp = (decltype(tmp))SearchContext.MemoryBlockInSection;
+		}
+		if (count && tmp && tmp->Root && tmp->Min) {
+			LdrpModuleBaseAddressIndex = tmp;
+		}
 	}
-	if (LdrpModuleBaseAddressIndex->Red)LdrpModuleBaseAddressIndex = nullptr;
+
 	return LdrpModuleBaseAddressIndex;
 }
 static NTSTATUS NTAPI NtInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY DataTableEntry, IN PVOID BaseAddress) {
@@ -262,7 +274,6 @@ static NTSTATUS NTAPI NtInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTR
 	if (!LdrpModuleBaseAddressIndex)return STATUS_UNSUCCESSFUL;
 
 	PLDR_DATA_TABLE_ENTRY_WIN8 LdrNode = decltype(LdrNode)((size_t)LdrpModuleBaseAddressIndex - offsetof(LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode));
-	RTL_RB_TREE tree{ LdrpModuleBaseAddressIndex };
 	bool bRight = false;
 	const auto i = offsetof(LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode);
 	while (true) {
@@ -286,14 +297,14 @@ static NTSTATUS NTAPI NtInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTR
 		}
 	}
 
-	RtlRbInsertNodeEx(&tree, &LdrNode->BaseAddressIndexNode, bRight, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
+	RtlRbInsertNodeEx(LdrpModuleBaseAddressIndex, &LdrNode->BaseAddressIndexNode, bRight, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
 	return STATUS_SUCCESS;
 }
 static NTSTATUS NTAPI NtRemoveModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY DataTableEntry) {
-	static RTL_RB_TREE tree{ RtlFindLdrpModuleBaseAddressIndex() };
-	if (!tree.Root)return STATUS_UNSUCCESSFUL;
+	static auto tree{ RtlFindLdrpModuleBaseAddressIndex() };
+	if (!tree->Root)return STATUS_UNSUCCESSFUL;
 
-	RtlRbRemoveNode(&tree, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
+	RtlRbRemoveNode(tree, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
 	return STATUS_SUCCESS;
 }
 
@@ -1074,26 +1085,7 @@ static VOID NTAPI RtlpRemoveInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 	return;
 }
 
-typedef struct _SEARCH_CONTEXT {
-	union {
-		IN PVOID  MemoryBuffer;
-		size_t InBufferPtr;
-	};
-	union {
-		IN DWORD BufferLength;
-		size_t reserved0;
-	};
-
-	union {
-		OUT PVOID  MemoryBlockInSection;
-		size_t OutBufferPtr;
-	};
-	union {
-		DWORD RemainingLength;
-		size_t reserved1;
-	};
-}SEARCH_CONTEXT, * PSEARCH_CONTEXT;
-static NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
+NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
 	IN HMODULE hModule	OPTIONAL,
 	IN LPCSTR lpSectionName	OPTIONAL,
 	IN OUT PSEARCH_CONTEXT SearchContext) {
@@ -1120,7 +1112,7 @@ static NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
 			for (WORD i = 0; i < headers->FileHeader.NumberOfSections; ++i) {
 				if (!_stricmp(lpSectionName, (LPCSTR)section->Name)) {
 					begin = SearchContext->OutBufferPtr = (size_t)hModule + section->VirtualAddress;
-					Length = SearchContext->RemainingLength = section->SizeOfRawData;
+					Length = SearchContext->RemainingLength = section->Misc.VirtualSize;
 					break;
 				}
 				++section;
@@ -1139,7 +1131,7 @@ static NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
 		for (DWORD i = 0; i < Length - bufferLength; ++begin, ++i) {
 			if (RtlCompareMemory((PVOID)begin, (PVOID)buffer, bufferLength) == bufferLength) {
 				SearchContext->OutBufferPtr = begin;
-				SearchContext->RemainingLength -= i;
+				--SearchContext->RemainingLength;
 				return STATUS_SUCCESS;
 			}
 		}

@@ -161,6 +161,8 @@ end:
 }
 
 int main() {
+    DWORD t;
+    NtQuerySystemMemoryModuleFeatures(&t);
     test_default();
     test_ws2_32();
     
