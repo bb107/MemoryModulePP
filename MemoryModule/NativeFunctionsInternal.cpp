@@ -704,16 +704,45 @@ BOOLEAN __forceinline WINAPI CheckSumBufferedFile(LPVOID BaseAddress, DWORD Buff
 }
 #endif
 BOOLEAN NTAPI RtlIsValidImageBuffer(PVOID Buffer) {
+	
 	BOOLEAN result = FALSE;
 	__try {
-		PIMAGE_NT_HEADERS headers = RtlImageNtHeader(Buffer);
-		PIMAGE_SECTION_HEADER sections = headers ? IMAGE_FIRST_SECTION(headers) : nullptr;
-		size_t SizeofImage = headers ? headers->OptionalHeader.SizeOfHeaders : 0;
-		if (!sections)return result;
+		union {
+			PIMAGE_NT_HEADERS32 nt32;
+			PIMAGE_NT_HEADERS64 nt64;
+			PIMAGE_NT_HEADERS nt;
+		}headers;
+		headers.nt = RtlImageNtHeader(Buffer);
+		PIMAGE_SECTION_HEADER sections = nullptr;
+		size_t SizeofImage = 0;
 
-		ProbeForRead(sections, headers->FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER));
-		for (WORD i = 0; i < headers->FileHeader.NumberOfSections; ++i, ++sections)
-			SizeofImage += sections->SizeOfRawData;
+		if (!headers.nt) {
+			return FALSE;
+		}
+
+		switch (headers.nt->OptionalHeader.Magic) {
+		case IMAGE_NT_OPTIONAL_HDR32_MAGIC:
+			sections = PIMAGE_SECTION_HEADER((char*)&headers.nt32->OptionalHeader + headers.nt32->FileHeader.SizeOfOptionalHeader);
+			SizeofImage = headers.nt32->OptionalHeader.SizeOfHeaders;
+			ProbeForRead(sections, headers.nt32->FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER));
+			for (WORD i = 0; i < headers.nt32->FileHeader.NumberOfSections; ++i, ++sections)
+				SizeofImage += sections->SizeOfRawData;
+
+			//Signature size
+			SizeofImage += headers.nt32->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY].Size;
+			break;
+		case IMAGE_NT_OPTIONAL_HDR64_MAGIC:
+			sections = PIMAGE_SECTION_HEADER((char*)&headers.nt64->OptionalHeader + headers.nt64->FileHeader.SizeOfOptionalHeader);
+			SizeofImage = headers.nt64->OptionalHeader.SizeOfHeaders;
+			ProbeForRead(sections, headers.nt64->FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER));
+			for (WORD i = 0; i < headers.nt64->FileHeader.NumberOfSections; ++i, ++sections)
+				SizeofImage += sections->SizeOfRawData;
+			SizeofImage += headers.nt64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY].Size;
+			break;
+		default:
+			return FALSE;
+		}
+		IMAGE_FIRST_SECTION(headers.nt32);
 		ProbeForRead(Buffer, SizeofImage);
 		result = CheckSumBufferedFile(Buffer, SizeofImage);
 	}

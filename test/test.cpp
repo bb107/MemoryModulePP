@@ -163,6 +163,9 @@ end:
 int main() {
     DWORD t;
     NtQuerySystemMemoryModuleFeatures(&t);
+    LoadLibraryMemory(ReadDllFile("C:\\Windows\\explorer.exe"));
+    return 0;
+
     test_default();
     test_ws2_32();
     
