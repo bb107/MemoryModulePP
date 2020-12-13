@@ -33,14 +33,14 @@ int test_default() {
     HGLOBAL gRes;
     char str[10];
 
-    NtQuerySystemMemoryModuleFeatures(&MemoryModuleFeatures);
+    LdrQuerySystemMemoryModuleFeatures(&MemoryModuleFeatures);
     if (MemoryModuleFeatures != MEMORY_FEATURE_ALL) {
         printf("not support all features on this version of windows.\n");
     }
     
-    if (!NT_SUCCESS(NtLoadDllMemoryExW(&m1, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
+    if (!NT_SUCCESS(LdrLoadDllMemoryExW(&m1, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
     LoadLibraryW(L"wininet.dll");
-    if (!NT_SUCCESS(NtLoadDllMemoryExW(&m2, nullptr, 0, buffer, 0, L"kernel128", nullptr))) goto end;
+    if (!NT_SUCCESS(LdrLoadDllMemoryExW(&m2, nullptr, 0, buffer, 0, L"kernel128", nullptr))) goto end;
 
     //forward export
     hModule = (HMODULE)m1;
@@ -92,10 +92,10 @@ int test_default() {
 
 end:
     delete[]buffer;
-    if (m1)NtUnloadDllMemory(m1);
+    if (m1)LdrUnloadDllMemory(m1);
     FreeLibrary(LoadLibraryW(L"wininet.dll"));
     FreeLibrary(GetModuleHandleW(L"wininet.dll"));
-    if (m2)NtUnloadDllMemory(m2);
+    if (m2)LdrUnloadDllMemory(m2);
 
     return 0;
 }
@@ -160,14 +160,33 @@ end:
     return 0;
 }
 
-int main() {
-    DWORD t;
-    NtQuerySystemMemoryModuleFeatures(&t);
-    LoadLibraryMemory(ReadDllFile("C:\\Windows\\explorer.exe"));
+DWORD WINAPI thread(PVOID) {
     return 0;
+}
 
-    test_default();
-    test_ws2_32();
+int main() {
+    //test_default();
+    //test_ws2_32();
+
+    auto a = ReadDllFile("a.dll");
+    auto LdrpReleaseTlsEntry = (NTSTATUS(*)(PVOID, PVOID)) 0x00007FFE2BC4D4A0;
+
+    //LOAD_FLAGS_NOT_HANDLE_TLS
+    HMEMORYMODULE p1 = LoadLibraryMemoryExA(a, 0, "a.dll", nullptr, 0),
+        p2 = nullptr;//LoadLibraryMemoryExA(a, 0, "b.dll", nullptr, 0);
+
+    PVOID ldr;
+    LdrLoadDllMemoryExW(&p2, &ldr, 0, a, 0, L"b.dll", nullptr);
+    delete[]a;
+
+    //LdrpReleaseTlsEntry(ldr, nullptr);
+    FreeLibraryMemory(p2);
     
+    HANDLE hThread = CreateThread(nullptr, 0, thread, nullptr, 0, nullptr);
+    WaitForSingleObject(hThread, INFINITE);
+    CloseHandle(hThread);
+
+    FreeLibraryMemory(p1);
+
     return 0;
 }

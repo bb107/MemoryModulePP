@@ -27,6 +27,21 @@
     <ClCompile Include="LoadDllMemoryApi.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="rtlver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rtlldr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rtlinv.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rtltls.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rtlsearch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MemoryModule.h">
@@ -35,13 +50,28 @@
     <ClInclude Include="Native.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="rtltype.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="NativeFunctionsInternal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="LoadDllMemoryApi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rtlver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rtlldr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rtlinv.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rtltls.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rtlsearch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

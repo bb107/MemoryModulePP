@@ -23,13 +23,23 @@
     <ClCompile Include="MemoryModule.cpp" />
     <ClCompile Include="Native.cpp" />
     <ClCompile Include="NativeFunctionsInternal.cpp" />
+    <ClCompile Include="rtlinv.cpp" />
+    <ClCompile Include="rtlldr.cpp" />
+    <ClCompile Include="rtlsearch.cpp" />
+    <ClCompile Include="rtltls.cpp" />
+    <ClCompile Include="rtlver.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="LoadDllMemoryApi.h" />
     <ClInclude Include="MemoryModule.h" />
     <ClInclude Include="Native.h" />
     <ClInclude Include="NativeFunctionsInternal.h" />
-    <ClInclude Include="rtltype.h" />
+    <ClInclude Include="rtlinv.h" />
+    <ClInclude Include="rtlldr.h" />
+    <ClInclude Include="rtlsearch.h" />
+    <ClInclude Include="rtltls.h" />
+    <ClInclude Include="rtlver.h" />
+    <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md" />

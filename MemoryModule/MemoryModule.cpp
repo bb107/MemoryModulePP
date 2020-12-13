@@ -1,10 +1,5 @@
-#include <windows.h>
-#include <winnt.h>
-#include <stddef.h>
+#include "stdafx.h"
 #include <tchar.h>
-#include "rtltype.h"
-#include "ntstatus.h"
-#include "Native.h"
 #include <algorithm>
 
 #if _MSC_VER
@@ -21,7 +16,6 @@
 #define HOST_MACHINE IMAGE_FILE_MACHINE_I386
 #endif
 
-#include "MemoryModule.h"
 #define GET_HEADER_DICTIONARY(headers, idx)  &headers->OptionalHeader.DataDirectory[idx]
 
 static PIMAGE_NT_HEADERS WINAPI GetImageNtHeaders(PMEMORYMODULE pModule) {

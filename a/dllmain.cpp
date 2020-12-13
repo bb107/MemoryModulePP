@@ -88,7 +88,8 @@ DWORD WINAPI Thread(PVOID) {
 int thread() {
     x = 2;
     printf("[0] ThreadLocalStoragePointer = %p\n", NtCurrentTeb()->ThreadLocalStoragePointer);
-    HANDLE hThread = CreateThread(nullptr, 0, Thread, nullptr, 0, nullptr);
+    HANDLE hThread;// = CreateThread(nullptr, 0, Thread, nullptr, 0, nullptr);
+    RtlCreateUserThread(NtCurrentProcess(), nullptr, FALSE, 0, 0, 0, Thread, nullptr, &hThread, nullptr);
     DWORD ret = -1;
     if (hThread) {
         WaitForSingleObject(hThread, 0xffffffff);
