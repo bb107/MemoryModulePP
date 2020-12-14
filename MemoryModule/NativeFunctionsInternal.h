@@ -20,7 +20,8 @@ NTSTATUS NTAPI LdrLoadDllMemory(
 #define MEMORY_FEATURE_LDRP_HASH_TABLE				0x00000008
 #define MEMORY_FEATURE_INVERTED_FUNCTION_TABLE		0x00000010
 #define MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA			0x00000020
-#define MEMORY_FEATURE_ALL                          0x0000003f
+#define MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY		0x00000040
+#define MEMORY_FEATURE_ALL                          0x0000007f
 
 //Get the implementation of the currently running operating system.
 NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures);

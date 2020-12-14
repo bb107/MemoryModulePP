@@ -5,7 +5,9 @@ PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(PVOID BaseAddress);
 
 PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(PCWSTR BaseName);
 
-#define RtlFindNtdllLdrEntry()	RtlFindLdrTableEntryByBaseName(L"ntdll.dll")
+extern PLDR_DATA_TABLE_ENTRY const LdrpNtdllBase;
+
+#define RtlFindNtdllLdrEntry()	(LdrpNtdllBase)
 
 
 
@@ -330,6 +332,8 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_1 :public _LDR_DATA_TABLE_ENTRY_WIN10
 //10.0.17134	Windows 10 | 2016 1803 Redstone 4 (Spring Creators Update)
 //10.0.17763	Windows 10 | 2016 1809 Redstone 5 (October Update)
 //10.0.18362	Windows 10 | 2016 1903 19H1 (May 2019 Update) | 2016 1909 19H2 (November 2019 Update)
+//10.0.19041	Windows 10 | 2016 2004 20H1 (May 2020 Update)
+//10.0.19042	Windows 10 | 2016 2009 20H2 (October 2020 Update)
 typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_2 {
 	_LIST_ENTRY InLoadOrderLinks;											//0x0
 	_LIST_ENTRY InMemoryOrderLinks;											//0x10

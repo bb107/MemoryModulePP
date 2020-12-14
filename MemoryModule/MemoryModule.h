@@ -57,8 +57,9 @@ typedef struct _MEMORYMODULE {
 				//Load Flags
 				WORD MappedDll : 1;
 				WORD InsertInvertedFunctionTableEntry : 1;
+				WORD TlsHandled : 1;
 				WORD UseReferenceCount : 1;
-				WORD reservedLoadFlags : 13;
+				WORD reservedLoadFlags : 12;
 
 			};
 			DWORD dwFlags;

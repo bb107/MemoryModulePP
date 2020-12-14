@@ -169,19 +169,14 @@ int main() {
     //test_ws2_32();
 
     auto a = ReadDllFile("a.dll");
-    auto LdrpReleaseTlsEntry = (NTSTATUS(*)(PVOID, PVOID)) 0x00007FFE2BC4D4A0;
 
     //LOAD_FLAGS_NOT_HANDLE_TLS
     HMEMORYMODULE p1 = LoadLibraryMemoryExA(a, 0, "a.dll", nullptr, 0),
-        p2 = nullptr;//LoadLibraryMemoryExA(a, 0, "b.dll", nullptr, 0);
-
-    PVOID ldr;
-    LdrLoadDllMemoryExW(&p2, &ldr, 0, a, 0, L"b.dll", nullptr);
+        p2 = LoadLibraryMemoryExA(a, 0, "b.dll", nullptr, 0);
     delete[]a;
 
-    //LdrpReleaseTlsEntry(ldr, nullptr);
     FreeLibraryMemory(p2);
-    
+
     HANDLE hThread = CreateThread(nullptr, 0, thread, nullptr, 0, nullptr);
     WaitForSingleObject(hThread, INFINITE);
     CloseHandle(hThread);

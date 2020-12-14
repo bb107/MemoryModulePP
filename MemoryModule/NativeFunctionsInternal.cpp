@@ -71,9 +71,9 @@ static NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENT
 	return STATUS_SUCCESS;
 }
 static NTSTATUS NTAPI RtlRemoveModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY DataTableEntry) {
+	DebugBreak();
 	static auto tree{ RtlFindLdrpModuleBaseAddressIndex() };
 	if (!tree->Root)return STATUS_UNSUCCESSFUL;
-
 	RtlRbRemoveNode(tree, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
 	return STATUS_SUCCESS;
 }
@@ -646,6 +646,9 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 				return status;
 			} while (false);
 		}
+		else {
+			module->TlsHandled = true;
+		}
 	}
 
 	return status;
@@ -713,6 +716,11 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 						status = RtlRemoveInvertedFunctionTable(BaseAddress);
 						if (!NT_SUCCESS(status))__fastfail(FAST_FAIL_CORRUPT_LIST_ENTRY);
 					}
+					if (module->TlsHandled) {
+						
+						status = LdrpReleaseTlsEntry(CurEntry);
+						if (!NT_SUCCESS(status)) __fastfail(FAST_FAIL_FATAL_APP_EXIT);
+					}
 					if (!RtlFreeLdrDataTableEntry(CurEntry))__fastfail(FAST_FAIL_FATAL_APP_EXIT);
 				}
 				if (!MemoryFreeLibrary(BaseAddress))__fastfail(FAST_FAIL_FATAL_APP_EXIT);
@@ -748,7 +756,7 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures) {
 		if (RtlFindLdrpHashTable())features |= MEMORY_FEATURE_LDRP_HASH_TABLE;
 		if (RtlFindLdrpInvertedFunctionTable())features |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
 		if (NT_SUCCESS(RtlFindLdrpHandleTlsData(&pfn, &value)) && pfn)features |= MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA;
-
+		if (NT_SUCCESS(RtlFindLdrpReleaseTlsEntry(&pfn, &value) && pfn))features |= MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
 		if (features)features |= MEMORY_FEATURE_SUPPORT_VERSION;
 		*pFeatures = features;
 	}

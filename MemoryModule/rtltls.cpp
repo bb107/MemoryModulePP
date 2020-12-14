@@ -134,32 +134,107 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 	}
 
 	SEARCH_CONTEXT SearchContext{ SearchContext.MemoryBuffer = const_cast<PVOID>(Feature),SearchContext.BufferLength = Size - 1 };
-	if (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(GetModuleHandleW(L"ntdll.dll"), ".text", &SearchContext)))
+	if (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(RtlFindNtdllLdrEntry()->DllBase), ".text", &SearchContext)))
 		SearchContext.OutBufferPtr -= OffsetOfFunctionBegin;
 	if (!(*_LdrpHandleTlsData = _LdrpHandleTlsData_ = SearchContext.MemoryBlockInSection))return STATUS_NOT_SUPPORTED;
 	*stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
 	return status;
 }
 
-NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
-	typedef NTSTATUS(__thiscall* _PTR_WIN8_1)(PLDR_DATA_TABLE_ENTRY LdrEntry);
-	typedef NTSTATUS(__stdcall* _PTR_WIN)(PLDR_DATA_TABLE_ENTRY LdrEntry);
-	union _FUNCTION_SET {
-		_PTR_WIN8_1 Win8_1_OrGreater;
-		_PTR_WIN	Default;
-		_FUNCTION_SET() {
-			this->Default = nullptr;
+NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* stdcall) {
+	static PVOID _LdrpReleaseTlsEntry_ = (PVOID)~0;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	__try {
+		if (_LdrpReleaseTlsEntry_ != (PVOID)~0) {
+			*_LdrpReleaseTlsEntry = _LdrpReleaseTlsEntry_;
+			if (!_LdrpReleaseTlsEntry_)status = STATUS_NOT_SUPPORTED;
 		}
-		operator bool() {
-			return this->Default != nullptr;
+		else {
+			*_LdrpReleaseTlsEntry = _LdrpReleaseTlsEntry_ = nullptr;
+			*stdcall = false;
 		}
-	};
-	static _FUNCTION_SET _LdrpHandleTlsData{};
-	static bool stdcall = false;
-	NTSTATUS status;
-	if (!_LdrpHandleTlsData) {
-		status = RtlFindLdrpHandleTlsData((PVOID*)&_LdrpHandleTlsData.Default, &stdcall);
-		if (!NT_SUCCESS(status))return status;
 	}
-	return stdcall ? _LdrpHandleTlsData.Default(LdrEntry) : _LdrpHandleTlsData.Win8_1_OrGreater(LdrEntry);
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		status = GetExceptionCode();
+	}
+	if (!NT_SUCCESS(status))return status;
+
+	DWORD Versions[3]{};
+	LPCVOID Feature = nullptr;
+	BYTE Size = 0;
+	WORD OffsetOfFunctionBegin = 0;
+	RtlGetNtVersionNumbers(Versions, Versions + 1, Versions + 2);
+	switch (Versions[0]) {
+	case 10: {
+		if (Versions[1]) {
+			status = STATUS_NOT_SUPPORTED;
+			break;
+		}
+		if (Versions[2] >= 19041) {
+			Size = 0x10;
+			OffsetOfFunctionBegin = 0x2F;
+			Feature = "\x74\x26\x48\x8B\x00\x48\x39\x58\x08\x75\x5D\x48\x8B\x4B\x08";
+			break;
+		}
+	}
+	default:
+		status = STATUS_NOT_SUPPORTED;
+	}
+
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	SEARCH_CONTEXT SearchContext{ SearchContext.MemoryBuffer = const_cast<PVOID>(Feature),SearchContext.BufferLength = Size - 1 };
+	if (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(RtlFindNtdllLdrEntry()->DllBase), ".text", &SearchContext)))
+		SearchContext.OutBufferPtr -= OffsetOfFunctionBegin;
+	if (!(*_LdrpReleaseTlsEntry = _LdrpReleaseTlsEntry_ = SearchContext.MemoryBlockInSection))return STATUS_NOT_SUPPORTED;
+	*stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
+	return status;
+}
+
+static NTSTATUS NTAPI RtlInvokeTlsHandler(IN PLDR_DATA_TABLE_ENTRY LdrEntry, IN BOOLEAN Release) {
+	static bool stdcall = false;
+	union _FUNCTION_SET {
+		struct {
+			NTSTATUS(__stdcall* LdrpHandleTlsData)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+			NTSTATUS(__stdcall* LdrpReleaseTlsEntry)(PLDR_DATA_TABLE_ENTRY LdrEntry, DWORD);
+		}Default;
+
+		struct {
+			NTSTATUS(__thiscall* LdrpHandleTlsData)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+			NTSTATUS(__thiscall* LdrpReleaseTlsEntry)(PLDR_DATA_TABLE_ENTRY LdrEntry, DWORD);
+		}WinBlue;
+
+		_FUNCTION_SET() {
+			RtlFindLdrpHandleTlsData((PVOID*)(&this->Default.LdrpHandleTlsData), &stdcall);
+			RtlFindLdrpReleaseTlsEntry((PVOID*)(&this->Default.LdrpReleaseTlsEntry), &stdcall);
+
+			if (!this->Default.LdrpHandleTlsData || !this->Default.LdrpReleaseTlsEntry) {
+				this->Default = {};
+			}
+		}
+
+	}static InvokeHandler;
+
+	if (Release) {
+		if (InvokeHandler.Default.LdrpReleaseTlsEntry) {
+			return (stdcall ? InvokeHandler.Default.LdrpReleaseTlsEntry : InvokeHandler.WinBlue.LdrpReleaseTlsEntry)(LdrEntry, 0);
+		}
+	}
+	else {
+		if (InvokeHandler.Default.LdrpHandleTlsData) {
+			return (stdcall ? InvokeHandler.Default.LdrpHandleTlsData : InvokeHandler.WinBlue.LdrpHandleTlsData)(LdrEntry);
+		}
+	}
+	return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
+	return RtlInvokeTlsHandler(LdrEntry, FALSE);
+}
+
+NTSTATUS NTAPI LdrpReleaseTlsEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
+	return RtlInvokeTlsHandler(LdrEntry, TRUE);
 }

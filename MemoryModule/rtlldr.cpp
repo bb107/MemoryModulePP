@@ -1,6 +1,8 @@
 #include "rtlldr.h"
 #pragma warning(disable:4996)
 
+PLDR_DATA_TABLE_ENTRY const LdrpNtdllBase = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
+
 VOID NTAPI RtlRbInsertNodeEx(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Parent, IN BOOLEAN Right, OUT PRTL_BALANCED_NODE Node) {
 	decltype(&RtlRbInsertNodeEx)_RtlRbInsertNodeEx = decltype(_RtlRbInsertNodeEx)(RtlGetNtProcAddress("RtlRbInsertNodeEx"));
 	if (!_RtlRbInsertNodeEx)return;
