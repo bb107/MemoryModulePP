@@ -167,6 +167,12 @@ DWORD WINAPI thread(PVOID) {
 int main() {
     //test_default();
     //test_ws2_32();
+    DWORD dwFeatures = 0;
+    LdrQuerySystemMemoryModuleFeatures(&dwFeatures);
+    if ((dwFeatures & MEMORY_FEATURE_ALL) != MEMORY_FEATURE_ALL) {
+        printf("\n");
+        DebugBreak();
+    }
 
     auto a = ReadDllFile("a.dll");
 

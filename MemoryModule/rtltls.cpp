@@ -15,7 +15,9 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 		}
 		else {
 			*_LdrpHandleTlsData = _LdrpHandleTlsData_ = nullptr;
-			*stdcall = false;
+			if (stdcall) {
+				*stdcall = false;
+			}
 		}
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -137,7 +139,7 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 	if (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(RtlFindNtdllLdrEntry()->DllBase), ".text", &SearchContext)))
 		SearchContext.OutBufferPtr -= OffsetOfFunctionBegin;
 	if (!(*_LdrpHandleTlsData = _LdrpHandleTlsData_ = SearchContext.MemoryBlockInSection))return STATUS_NOT_SUPPORTED;
-	*stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
+	if (stdcall) *stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
 	return status;
 }
 
@@ -152,7 +154,9 @@ NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* std
 		}
 		else {
 			*_LdrpReleaseTlsEntry = _LdrpReleaseTlsEntry_ = nullptr;
-			*stdcall = false;
+			if (stdcall) {
+				*stdcall = false;
+			}
 		}
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -190,45 +194,51 @@ NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* std
 	if (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(RtlFindNtdllLdrEntry()->DllBase), ".text", &SearchContext)))
 		SearchContext.OutBufferPtr -= OffsetOfFunctionBegin;
 	if (!(*_LdrpReleaseTlsEntry = _LdrpReleaseTlsEntry_ = SearchContext.MemoryBlockInSection))return STATUS_NOT_SUPPORTED;
-	*stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
+	if (stdcall)*stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
 	return status;
 }
 
 static NTSTATUS NTAPI RtlInvokeTlsHandler(IN PLDR_DATA_TABLE_ENTRY LdrEntry, IN BOOLEAN Release) {
-	static bool stdcall = false;
-	union _FUNCTION_SET {
-		struct {
-			NTSTATUS(__stdcall* LdrpHandleTlsData)(PLDR_DATA_TABLE_ENTRY LdrEntry);
-			NTSTATUS(__stdcall* LdrpReleaseTlsEntry)(PLDR_DATA_TABLE_ENTRY LdrEntry, DWORD);
-		}Default;
+	struct _FUNCTION_SET {
+		bool stdcall;
 
-		struct {
-			NTSTATUS(__thiscall* LdrpHandleTlsData)(PLDR_DATA_TABLE_ENTRY LdrEntry);
-			NTSTATUS(__thiscall* LdrpReleaseTlsEntry)(PLDR_DATA_TABLE_ENTRY LdrEntry, DWORD);
-		}WinBlue;
+		union {
+			struct {
+				NTSTATUS(__stdcall* LdrpHandleTlsData)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+				NTSTATUS(__stdcall* LdrpReleaseTlsEntry)(PLDR_DATA_TABLE_ENTRY LdrEntry, DWORD);
+			}Default;
+
+			struct {
+				NTSTATUS(__thiscall* LdrpHandleTlsData)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+				NTSTATUS(__thiscall* LdrpReleaseTlsEntry)(PLDR_DATA_TABLE_ENTRY LdrEntry, DWORD);
+			}WinBlue;
+		};
 
 		_FUNCTION_SET() {
-			RtlFindLdrpHandleTlsData((PVOID*)(&this->Default.LdrpHandleTlsData), &stdcall);
-			RtlFindLdrpReleaseTlsEntry((PVOID*)(&this->Default.LdrpReleaseTlsEntry), &stdcall);
-
-			if (!this->Default.LdrpHandleTlsData || !this->Default.LdrpReleaseTlsEntry) {
+			if (!NT_SUCCESS(RtlFindLdrpHandleTlsData((PVOID*)(&this->Default.LdrpHandleTlsData), &this->stdcall)) ||
+				!NT_SUCCESS(RtlFindLdrpReleaseTlsEntry((PVOID*)(&this->Default.LdrpReleaseTlsEntry), nullptr))) {
 				this->Default = {};
+				OutputDebugString(L"Can`t find both LdrpHandleTlsData and LdrpReleaseTlsEntry.\n");
 			}
+		}
+
+		NTSTATUS operator()(PLDR_DATA_TABLE_ENTRY LdrEntry) {
+			if (!Default.LdrpHandleTlsData) {
+				return STATUS_NOT_SUPPORTED;
+			}
+			return (stdcall ? Default.LdrpHandleTlsData : WinBlue.LdrpHandleTlsData)(LdrEntry);
+		}
+
+		NTSTATUS operator()(PLDR_DATA_TABLE_ENTRY LdrEntry, DWORD dwFlags) {
+			if (!Default.LdrpReleaseTlsEntry) {
+				return STATUS_NOT_SUPPORTED;
+			}
+			return (stdcall ? Default.LdrpReleaseTlsEntry : WinBlue.LdrpReleaseTlsEntry)(LdrEntry, dwFlags);
 		}
 
 	}static InvokeHandler;
 
-	if (Release) {
-		if (InvokeHandler.Default.LdrpReleaseTlsEntry) {
-			return (stdcall ? InvokeHandler.Default.LdrpReleaseTlsEntry : InvokeHandler.WinBlue.LdrpReleaseTlsEntry)(LdrEntry, 0);
-		}
-	}
-	else {
-		if (InvokeHandler.Default.LdrpHandleTlsData) {
-			return (stdcall ? InvokeHandler.Default.LdrpHandleTlsData : InvokeHandler.WinBlue.LdrpHandleTlsData)(LdrEntry);
-		}
-	}
-	return STATUS_NOT_SUPPORTED;
+	return Release ? InvokeHandler(LdrEntry, 0) : InvokeHandler(LdrEntry);
 }
 
 NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {

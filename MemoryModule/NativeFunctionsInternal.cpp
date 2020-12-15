@@ -71,7 +71,6 @@ static NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENT
 	return STATUS_SUCCESS;
 }
 static NTSTATUS NTAPI RtlRemoveModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY DataTableEntry) {
-	DebugBreak();
 	static auto tree{ RtlFindLdrpModuleBaseAddressIndex() };
 	if (!tree->Root)return STATUS_UNSUCCESSFUL;
 	RtlRbRemoveNode(tree, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
@@ -735,6 +734,7 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 	return STATUS_INVALID_HANDLE;
 }
 
+__declspec(noreturn)
 VOID NTAPI LdrUnloadDllMemoryAndExitThread(IN HMEMORYMODULE BaseAddress, IN DWORD dwExitCode) {
 	LdrUnloadDllMemory(BaseAddress);
 	RtlExitUserThread(dwExitCode);
