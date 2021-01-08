@@ -86,8 +86,8 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress);
 #pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread")
 #pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=LdrUnloadDllMemoryAndExitThread")
 #else
-#pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread=_NtUnloadDllMemoryAndExitThread@8")
-#pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=_NtUnloadDllMemoryAndExitThread@8")
+#pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread=_LdrUnloadDllMemoryAndExitThread@8")
+#pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=_LdrUnloadDllMemoryAndExitThread@8")
 #endif
 //FreeLibraryMemoryAndExitThread = GetProcAddress(GetModuleHandleW(nullptr), "FreeLibraryMemoryAndExitThread");
 //FreeLibraryMemoryAndExitThread(hModule, 0);
