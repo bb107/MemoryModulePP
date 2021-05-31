@@ -226,14 +226,14 @@ static NTSTATUS NTAPI RtlInvokeTlsHandler(IN PLDR_DATA_TABLE_ENTRY LdrEntry, IN 
 			if (!Default.LdrpHandleTlsData) {
 				return STATUS_NOT_SUPPORTED;
 			}
-			return (stdcall ? Default.LdrpHandleTlsData : WinBlue.LdrpHandleTlsData)(LdrEntry);
+			return stdcall ? Default.LdrpHandleTlsData(LdrEntry) : WinBlue.LdrpHandleTlsData(LdrEntry);
 		}
 
 		NTSTATUS operator()(PLDR_DATA_TABLE_ENTRY LdrEntry, DWORD dwFlags) {
 			if (!Default.LdrpReleaseTlsEntry) {
 				return STATUS_NOT_SUPPORTED;
 			}
-			return (stdcall ? Default.LdrpReleaseTlsEntry : WinBlue.LdrpReleaseTlsEntry)(LdrEntry, dwFlags);
+			return stdcall ? Default.LdrpReleaseTlsEntry(LdrEntry,dwFlags) : WinBlue.LdrpReleaseTlsEntry(LdrEntry, dwFlags);
 		}
 
 	}static InvokeHandler;
