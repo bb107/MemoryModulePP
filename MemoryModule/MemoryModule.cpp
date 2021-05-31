@@ -230,25 +230,6 @@ static BOOL FinalizeSections(PMEMORYMODULE module) {
 	return FinalizeSection(module, &sectionData);
 }
 
-static BOOL ExecuteTLS(PMEMORYMODULE module) {
-	unsigned char* codeBase = module->codeBase;
-	PIMAGE_TLS_DIRECTORY tls;
-	PIMAGE_TLS_CALLBACK* callback;
-	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(codeBase);
-	PIMAGE_DATA_DIRECTORY directory = GET_HEADER_DICTIONARY(headers, IMAGE_DIRECTORY_ENTRY_TLS);
-	if (directory->VirtualAddress == 0) return TRUE;
-
-	tls = (PIMAGE_TLS_DIRECTORY)(codeBase + directory->VirtualAddress);
-	callback = (PIMAGE_TLS_CALLBACK*)tls->AddressOfCallBacks;
-	if (callback) {
-		while (*callback) {
-			(*callback)((LPVOID)codeBase, DLL_PROCESS_ATTACH, nullptr);
-			callback++;
-		}
-	}
-	return TRUE;
-}
-
 typedef struct _REBASE_INFO {
 	USHORT Offset : 12;
 	USHORT Type : 4;
@@ -499,25 +480,6 @@ HMEMORYMODULE MemoryLoadLibrary(const void* data) {
 	// mark memory pages depending on section headers and release
 	// sections that are marked as "discardable"
 	if (!FinalizeSections(hMemoryModule)) goto error;
-
-	// TLS callbacks are executed BEFORE the main loading
-	if (!ExecuteTLS(hMemoryModule)) goto error;
-
-	// get entry point of loaded library
-	if (new_header->OptionalHeader.AddressOfEntryPoint) {
-		__try {
-			// notify library about attaching to process
-			if (!((DllEntryProc)(base + new_header->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)base, DLL_PROCESS_ATTACH, 0)) {
-				SetLastError(ERROR_DLL_INIT_FAILED);
-				goto error;
-			}
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER) {
-			SetLastError(RtlNtStatusToDosError(GetExceptionCode()));
-			goto error;
-		}
-		hMemoryModule->initialized = TRUE;
-	}
 	
 	return (HMEMORYMODULE)base;
 error:
@@ -532,10 +494,6 @@ bool MemoryFreeLibrary(HMEMORYMODULE mod) {
 
 	if (!module) return false;
 	if (module->loadFromNtLoadDllMemory && !module->underUnload)return false;
-	if (module->initialized) {
-		DllEntryProc DllEntry = (DllEntryProc)(LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint);
-		(*DllEntry)((HINSTANCE)module->codeBase, DLL_PROCESS_DETACH, 0);
-	}
 	if (module->nameExportsTable)delete[] module->nameExportsTable;
 	if (module->hModulesList) {
 		for (DWORD i = 0; i < module->dwModulesCount; ++i) {

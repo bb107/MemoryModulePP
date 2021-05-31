@@ -521,6 +521,47 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(PVOID Buffer) {
 	return result;
 }
 
+BOOL NTAPI LdrpExecuteTLS(PMEMORYMODULE module) {
+	unsigned char* codeBase = module->codeBase;
+	PIMAGE_TLS_DIRECTORY tls;
+	PIMAGE_TLS_CALLBACK* callback;
+	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(codeBase);
+	PIMAGE_DATA_DIRECTORY directory = &headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
+	if (directory->VirtualAddress == 0) return TRUE;
+
+	tls = (PIMAGE_TLS_DIRECTORY)(codeBase + directory->VirtualAddress);
+	callback = (PIMAGE_TLS_CALLBACK*)tls->AddressOfCallBacks;
+	if (callback) {
+		while (*callback) {
+			(*callback)((LPVOID)codeBase, DLL_PROCESS_ATTACH, nullptr);
+			callback++;
+		}
+	}
+	return TRUE;
+}
+
+BOOL NTAPI LdrpCallInitializers(PMEMORYMODULE module, DWORD dwReason) {
+	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(module->codeBase);
+
+	if (headers->OptionalHeader.AddressOfEntryPoint) {
+		__try {
+			// notify library about attaching to process
+			if (((DllEntryProc)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)module->codeBase, dwReason, 0)) {
+				module->initialized = TRUE;
+				return TRUE;
+			}
+			SetLastError(ERROR_DLL_INIT_FAILED);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			SetLastError(RtlNtStatusToDosError(GetExceptionCode()));
+		}
+
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
 NTSTATUS NTAPI LdrLoadDllMemory(OUT HMEMORYMODULE* BaseAddress, IN LPVOID BufferAddress, IN size_t BufferSize) {
 	return LdrLoadDllMemoryExW(BaseAddress, nullptr, LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS, BufferAddress, BufferSize, nullptr, nullptr);
 }
@@ -606,7 +647,15 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	module->loadFromNtLoadDllMemory = true;
 	headers = RtlImageNtHeader(*BaseAddress);
 	if (headers->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NO_SEH)dwFlags |= LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION;
-	if (dwFlags & LOAD_FLAGS_NOT_MAP_DLL) return status;
+	if (dwFlags & LOAD_FLAGS_NOT_MAP_DLL) {
+
+		if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
+			status = STATUS_DLL_INIT_FAILED;
+			MemoryFreeLibrary(*BaseAddress);
+		}
+
+		return status;
+	}
 
 	status = LdrMapDllMemory(*BaseAddress, dwFlags, DllName, DllFullName, &ModuleEntry);
 	if (!NT_SUCCESS(status)) {
@@ -648,6 +697,11 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		else {
 			module->TlsHandled = true;
 		}
+	}
+
+	if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
+		status = STATUS_DLL_INIT_FAILED;
+		LdrUnloadDllMemory(*BaseAddress);
 	}
 
 	return status;
@@ -703,13 +757,18 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 	}
 
 	if (CurEntry = RtlFindLdrTableEntryByHandle(BaseAddress)) {
-		if (RtlImageNtHeader(BaseAddress)->OptionalHeader.SizeOfImage == CurEntry->SizeOfImage) {
+		PIMAGE_NT_HEADERS headers = RtlImageNtHeader(BaseAddress);
+		if (headers->OptionalHeader.SizeOfImage == CurEntry->SizeOfImage) {
 			if (module->UseReferenceCount) {
 				status = RtlGetReferenceCount(CurEntry, &count);
 				if (!NT_SUCCESS(status))return status;
 			}
 			if (!(count & ~1)) {
 				module->underUnload = true;
+				if (module->initialized) {
+					DllEntryProc DllEntry = (DllEntryProc)(LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint);
+					(*DllEntry)((HINSTANCE)module->codeBase, DLL_PROCESS_DETACH, 0);
+				}
 				if (module->MappedDll) {
 					if (module->InsertInvertedFunctionTableEntry) {
 						status = RtlRemoveInvertedFunctionTable(BaseAddress);

@@ -175,7 +175,7 @@ NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* std
 			status = STATUS_NOT_SUPPORTED;
 			break;
 		}
-		if (Versions[2] >= 19041) {
+		if (Versions[2] >= 18362) {
 			Size = 0x10;
 			OffsetOfFunctionBegin = 0x2F;
 			Feature = "\x74\x26\x48\x8B\x00\x48\x39\x58\x08\x75\x5D\x48\x8B\x4B\x08";

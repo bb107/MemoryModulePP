@@ -100,70 +100,6 @@ end:
     return 0;
 }
 
-#define WSADESCRIPTION_LEN      256
-#define WSASYS_STATUS_LEN       128
-typedef USHORT ADDRESS_FAMILY;
-typedef int (PASCAL* WSAStartup_t)(WORD wVersionRequired, LPWSADATA lpWSAData);
-typedef int (PASCAL* WSACleanup_t)(void);
-typedef SOCKET (PASCAL* socket_t)(int af, int type, int protocol);
-typedef int (PASCAL* closesocket_t)(SOCKET s);
-typedef int (PASCAL* connect_t)(SOCKET s, const struct sockaddr FAR* name, int namelen);
-typedef unsigned long (PASCAL* inet_addr_t)(const char FAR* cp);
-typedef u_short (PASCAL* htons_t)(u_short hostshort);
-
-int test_ws2_32() {
-    PVOID buffer = ReadDllFile("C:\\Windows\\system32\\ws2_32.dll");
-
-    HMEMORYMODULE hMemoryModule = nullptr;
-    HMODULE hModule = nullptr;
-    NTSTATUS status;
-
-    WSAData data{};
-    SOCKET sock = INVALID_SOCKET;
-    sockaddr_in addr{};
-    WSAStartup_t _WSAStartup = nullptr;
-    WSACleanup_t _WSACleanup = nullptr;
-    socket_t _socket = nullptr;
-    closesocket_t _closesocket = nullptr;
-    connect_t _connect = nullptr;
-    inet_addr_t _inet_addr = nullptr;
-    htons_t _htons = nullptr;
-
-    hMemoryModule = LoadLibraryMemoryExW(buffer, 0, L"ws2.dll", nullptr, LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS);
-    hModule = MemoryModuleToModule(hMemoryModule);
-    if (buffer)delete[]buffer;
-    if (!hModule)return 0;
-
-    _WSAStartup = (decltype(_WSAStartup)(GetProcAddress(hModule, "WSAStartup")));
-    _WSACleanup = (decltype(_WSACleanup)(GetProcAddress(hModule, "WSACleanup")));
-    _socket = (decltype(_socket)(GetProcAddress(hModule, "socket")));
-    _closesocket = (decltype(_closesocket)(GetProcAddress(hModule, "closesocket")));
-    _connect = (decltype(_connect)(GetProcAddress(hModule, "connect")));
-    _inet_addr = (decltype(_inet_addr)(GetProcAddress(hModule, "inet_addr")));
-    _htons = (decltype(_htons)(GetProcAddress(hModule, "htons")));
-    if (!_WSAStartup || !_WSACleanup || !_socket || !_closesocket || !_connect || !_inet_addr || !_htons)goto end;
-
-    if (_WSAStartup(MAKEWORD(2, 2), &data) != 0)goto end;
-    if ((sock = _socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET)goto end;
-    addr.sin_family = AF_INET;
-    addr.sin_port = _htons(80);
-    addr.sin_addr.S_un.S_addr = _inet_addr("1.1.1.1");
-    if (_connect(sock, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)goto end;
-
-    //success
-    printf("ws2_32 completed successfully.\n");
-
-end:
-    if (sock != INVALID_SOCKET && _closesocket)_closesocket(sock);
-    if (_WSACleanup)_WSACleanup();
-    FreeLibraryMemory(hMemoryModule);
-    return 0;
-}
-
-DWORD WINAPI thread(PVOID) {
-    return 0;
-}
-
 int main() {
     //test_default();
     //test_ws2_32();
@@ -173,21 +109,24 @@ int main() {
         printf("\n");
         DebugBreak();
     }
+    
+    auto pOle32 = ReadDllFile("C:\\Windows\\System32\\ole32.dll");
+    HMEMORYMODULE hModule;
+    NTSTATUS status = LdrLoadDllMemoryExW(
+        &hModule,
+        nullptr,
+        0,
+        pOle32,
+        0,
+        nullptr,
+        nullptr
+    );
 
-    auto a = ReadDllFile("a.dll");
+    delete[]pOle32;
 
-    //LOAD_FLAGS_NOT_HANDLE_TLS
-    HMEMORYMODULE p1 = LoadLibraryMemoryExA(a, 0, "a.dll", nullptr, 0),
-        p2 = LoadLibraryMemoryExA(a, 0, "b.dll", nullptr, 0);
-    delete[]a;
-
-    FreeLibraryMemory(p2);
-
-    HANDLE hThread = CreateThread(nullptr, 0, thread, nullptr, 0, nullptr);
-    WaitForSingleObject(hThread, INFINITE);
-    CloseHandle(hThread);
-
-    FreeLibraryMemory(p1);
+    if (NT_SUCCESS(status)) {
+        LdrUnloadDllMemory(hModule);
+    }
 
     return 0;
 }
