@@ -13,6 +13,18 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Header Files\3rdparty">
+      <UniqueIdentifier>{8baeecde-ca9b-43da-b847-c24b02413572}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\3rdparty\Detours">
+      <UniqueIdentifier>{21335c89-8359-427a-a6c6-d621b31be2ce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\3rdparty">
+      <UniqueIdentifier>{22e60119-4e33-49c4-81c4-b95ea98501e3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\3rdparty\Detours">
+      <UniqueIdentifier>{10bf9b0e-09d4-473b-a4bb-d7c4cecc65b4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MemoryModule.cpp">
@@ -41,6 +53,39 @@
     </ClCompile>
     <ClCompile Include="rtlsearch.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MmpTls.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\creatwth.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\detours.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\disasm.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\disolarm.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\disolarm64.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\disolia64.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\disolx64.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\disolx86.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\image.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="..\3rdparty\Detours\modules.cpp">
+      <Filter>Source Files\3rdparty\Detours</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -73,6 +118,12 @@
     </ClInclude>
     <ClInclude Include="stdafx.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\3rdparty\Detours\detours.h">
+      <Filter>Header Files\3rdparty\Detours</Filter>
+    </ClInclude>
+    <ClInclude Include="..\3rdparty\Detours\detver.h">
+      <Filter>Header Files\3rdparty\Detours</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

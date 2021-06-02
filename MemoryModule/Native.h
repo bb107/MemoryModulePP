@@ -81,10 +81,10 @@ typedef struct _STRING {
 	WORD MaximumLength;
 	CHAR * Buffer;
 } STRING, *PSTRING;
-struct CLIENT_ID {
-	HANDLE UniqueProcess;//Process ID
-	HANDLE UniqueThread;//Thread ID
-};
+typedef struct _CLIENT_ID {
+	HANDLE UniqueProcess;
+	HANDLE UniqueThread;
+} CLIENT_ID, * PCLIENT_ID;
 typedef struct _SYSTEM_THREAD {
 	LARGE_INTEGER KernelTime;
 	LARGE_INTEGER UserTime;
@@ -1422,6 +1422,185 @@ NTSTATUS NTAPI LdrLockLoaderLock(size_t Flags, size_t* State, size_t* Cookie);
 NTSTATUS NTAPI LdrUnlockLoaderLock(size_t Flags, size_t Cookie);
 NTSTATUS NTAPI LdrUnloadDll(IN HANDLE ModuleHandle);
 
-#define RtlRaiseStatus(_Status_) ((VOID(NTAPI*)(NTSTATUS Status))(RtlGetNtProcAddress("RtlRaiseStatus")))(_Status_)
+extern "C"
+NTSYSAPI
+DECLSPEC_NORETURN
+VOID
+NTAPI
+RtlRaiseStatus(
+	_In_ NTSTATUS Status
+);
 
 DECLSPEC_NORETURN VOID NTAPI RtlExitUserThread(IN NTSTATUS ExitStatus);
+
+#define RtlProcessHeap() (NtCurrentPeb()->ProcessHeap)
+
+#define NtCurrentProcessId() (NtCurrentTeb()->ClientId.UniqueProcess)
+#define NtCurrentThreadId() (NtCurrentTeb()->ClientId.UniqueThread)
+
+typedef enum _PROCESS_TLS_INFORMATION_TYPE {
+	ProcessTlsReplaceIndex,
+	ProcessTlsReplaceVector,
+	MaxProcessTlsOperation
+} PROCESS_TLS_INFORMATION_TYPE, * PPROCESS_TLS_INFORMATION_TYPE;
+
+typedef struct _RTL_BITMAP {
+	ULONG SizeOfBitMap;
+	PULONG Buffer;
+} RTL_BITMAP, * PRTL_BITMAP;
+
+FORCEINLINE VOID InitializeListHead(
+	_Out_ PLIST_ENTRY ListHead
+)
+{
+	ListHead->Flink = ListHead->Blink = ListHead;
+}
+
+FORCEINLINE BOOLEAN RemoveEntryList(
+	_In_ PLIST_ENTRY Entry
+)
+{
+	PLIST_ENTRY Blink;
+	PLIST_ENTRY Flink;
+
+	Flink = Entry->Flink;
+	Blink = Entry->Blink;
+	Blink->Flink = Flink;
+	Flink->Blink = Blink;
+
+	return Flink == Blink;
+}
+
+FORCEINLINE VOID InsertTailList(
+	_Inout_ PLIST_ENTRY ListHead,
+	_Inout_ PLIST_ENTRY Entry
+)
+{
+	PLIST_ENTRY Blink;
+
+	Blink = ListHead->Blink;
+	Entry->Flink = ListHead;
+	Entry->Blink = Blink;
+	Blink->Flink = Entry;
+	ListHead->Blink = Entry;
+}
+
+extern "C"
+NTSYSCALLAPI
+NTSTATUS
+NTAPI
+NtSetInformationProcess(
+	_In_ HANDLE ProcessHandle,
+	_In_ PROCESSINFOCLASS ProcessInformationClass,
+	_In_reads_bytes_(ProcessInformationLength) PVOID ProcessInformation,
+	_In_ ULONG ProcessInformationLength
+);
+
+extern "C"
+NTSYSAPI
+NTSTATUS
+NTAPI
+LdrShutdownThread(
+	VOID
+);
+
+extern "C"
+NTSYSCALLAPI
+NTSTATUS
+NTAPI
+NtCreateThread(
+	_Out_ PHANDLE ThreadHandle,
+	_In_ ACCESS_MASK DesiredAccess,
+	_In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
+	_In_ HANDLE ProcessHandle,
+	_Out_ PCLIENT_ID ClientId,
+	_In_ PCONTEXT ThreadContext,
+	_In_ PINITIAL_TEB InitialTeb,
+	_In_ BOOLEAN CreateSuspended
+);
+
+extern "C"
+NTSYSCALLAPI
+NTSTATUS
+NTAPI
+NtCreateThreadEx(
+	_Out_ PHANDLE ThreadHandle,
+	_In_ ACCESS_MASK DesiredAccess,
+	_In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
+	_In_ HANDLE ProcessHandle,
+	_In_ PVOID StartRoutine,
+	_In_opt_ PVOID Argument,
+	_In_ ULONG CreateFlags,
+	_In_ SIZE_T ZeroBits,
+	_In_ SIZE_T StackSize,
+	_In_ SIZE_T MaximumStackSize,
+	_In_opt_ PVOID AttributeList
+);
+
+extern "C" {
+	NTSYSAPI
+		VOID
+		NTAPI
+		RtlInitializeSRWLock(
+			_Out_ PRTL_SRWLOCK SRWLock
+		);
+
+	NTSYSAPI
+		VOID
+		NTAPI
+		RtlAcquireSRWLockExclusive(
+			_Inout_ PRTL_SRWLOCK SRWLock
+		);
+
+	NTSYSAPI
+		VOID
+		NTAPI
+		RtlAcquireSRWLockShared(
+			_Inout_ PRTL_SRWLOCK SRWLock
+		);
+
+	NTSYSAPI
+		VOID
+		NTAPI
+		RtlReleaseSRWLockExclusive(
+			_Inout_ PRTL_SRWLOCK SRWLock
+		);
+
+	NTSYSAPI
+		VOID
+		NTAPI
+		RtlReleaseSRWLockShared(
+			_Inout_ PRTL_SRWLOCK SRWLock
+		);
+
+	NTSYSAPI
+		VOID
+		NTAPI
+		RtlClearBits(
+			_In_ PRTL_BITMAP BitMapHeader,
+			_In_range_(0, BitMapHeader->SizeOfBitMap - NumberToClear) ULONG StartingIndex,
+			_In_range_(0, BitMapHeader->SizeOfBitMap - StartingIndex) ULONG NumberToClear
+		);
+
+	NTSYSAPI
+		VOID
+		NTAPI
+		RtlInitializeBitMap(
+			_Out_ PRTL_BITMAP BitMapHeader,
+			_In_ PULONG BitMapBuffer,
+			_In_ ULONG SizeOfBitMap
+		);
+
+	_Success_(return != -1)
+		NTSYSAPI
+		ULONG
+		NTAPI
+		RtlFindClearBitsAndSet(
+			_In_ PRTL_BITMAP BitMapHeader,
+			_In_ ULONG NumberToFind,
+			_In_ ULONG HintIndex
+		);
+
+}
+
+#define RtlClearBit(BitMapHeader,BitNumber) RtlClearBits((BitMapHeader),(BitNumber),1)

@@ -19,8 +19,19 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\3rdparty\Detours\creatwth.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\detours.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\disasm.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\disolarm.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\disolarm64.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\disolia64.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\disolx64.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\disolx86.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\image.cpp" />
+    <ClCompile Include="..\3rdparty\Detours\modules.cpp" />
     <ClCompile Include="LoadDllMemoryApi.cpp" />
     <ClCompile Include="MemoryModule.cpp" />
+    <ClCompile Include="MmpTls.cpp" />
     <ClCompile Include="Native.cpp" />
     <ClCompile Include="NativeFunctionsInternal.cpp" />
     <ClCompile Include="rtlinv.cpp" />
@@ -30,6 +41,8 @@
     <ClCompile Include="rtlver.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\3rdparty\Detours\detours.h" />
+    <ClInclude Include="..\3rdparty\Detours\detver.h" />
     <ClInclude Include="LoadDllMemoryApi.h" />
     <ClInclude Include="MemoryModule.h" />
     <ClInclude Include="Native.h" />
@@ -101,15 +114,19 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(SolutionDir);</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(SolutionDir);</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(SolutionDir);</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(SolutionDir);</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

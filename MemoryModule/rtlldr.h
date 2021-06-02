@@ -412,16 +412,4 @@ BOOL NTAPI RtlFreeLdrpHeap(IN PVOID buffer);
 #define RtlInitializeListEntry(entry) ((entry)->Blink = (entry)->Flink = (entry))
 #define RtlInitializeSingleEntry(entry) ((entry->Next = (entry)))
 
-FORCEINLINE BOOLEAN NTAPI RemoveEntryList(IN PLIST_ENTRY Entry) {
-	PLIST_ENTRY OldFlink;
-	PLIST_ENTRY OldBlink;
-
-	OldFlink = Entry->Flink;
-	OldBlink = Entry->Blink;
-
-	OldFlink->Blink = OldBlink;
-	OldBlink->Flink = OldFlink;
-	return (BOOLEAN)(OldFlink == OldBlink);
-}
-
 size_t NTAPI LdrpDataTableEntrySize();

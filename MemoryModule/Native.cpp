@@ -2,6 +2,7 @@
 #pragma warning(disable:6387)
 #pragma warning(disable:26812)
 #pragma comment(lib,"Secur32.lib")
+#pragma comment(lib,"ntdll.lib")
 
 FARPROC NTAPI RtlGetNtProcAddress(LPCSTR func_name) {
 	return GetProcAddress(GetModuleHandleA("ntdll.dll"), func_name);
