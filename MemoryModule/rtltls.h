@@ -1,5 +1,4 @@
 #pragma once
-#include "stdafx.h"
 
 NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall);
 

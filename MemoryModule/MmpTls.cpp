@@ -9,9 +9,9 @@
 //      [MMP_START_TLS_INDEX, MMP_MAXIMUM_TLS_INDEX)     Reserved for MemoryModule
 //
 
-#define MMP_START_TLS_INDEX 0x50
+#define MMP_START_TLS_INDEX 0x80    //128
 
-#define MMP_MAXIMUM_TLS_INDEX 0x100
+#define MMP_MAXIMUM_TLS_INDEX 0x100 //256
 
 #define MmpAllocateTlsp()   (RtlAllocateHeap(\
                                 RtlProcessHeap(),\
@@ -56,6 +56,7 @@ typedef struct _MMP_TLSP_RECORD {
 
 CRITICAL_SECTION MmpTlspLock;
 LIST_ENTRY MmpThreadLocalStoragePointer;
+DWORD MmpActiveThreadCount;
 
 
 decltype(&NtCreateThread) OriginNtCreateThread = NtCreateThread;
@@ -268,6 +269,10 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
         return ERROR_NOT_ENOUGH_MEMORY;
     }
 
+    EnterCriticalSection(&MmpTlspLock);
+    ++MmpActiveThreadCount;
+    LeaveCriticalSection(&MmpTlspLock);
+
     return Context.ThreadStartRoutine(Context.ThreadParameter);
 }
 
@@ -278,7 +283,7 @@ NTSTATUS NTAPI HookNtCreateThread(
     _In_ HANDLE ProcessHandle,
     _Out_ PCLIENT_ID ClientId,
     _In_ PCONTEXT ThreadContext,
-    _In_ PINITIAL_TEB InitialTeb,
+    _In_ PVOID InitialTeb,
     _In_ BOOLEAN CreateSuspended) {
     CONTEXT Context = *ThreadContext;
     PTHREAD_CONTEXT _Context = PTHREAD_CONTEXT(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(_Context)));
@@ -395,6 +400,8 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
 
         entry = entry->Flink;
     }
+
+    --MmpActiveThreadCount;
 
     LeaveCriticalSection(&MmpTlspLock);
 
@@ -625,7 +632,10 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
                     if (j->TlspMmpBlock[ProcessTlsInformation->TlsIndex] == ProcessTlsInformation->ThreadData[i].TlsModulePointer) {
                         found = true;
 
-                        j->TlspLdrBlock[ProcessTlsInformation->TlsIndex] = ProcessTlsInformation->ThreadData[i].TlsModulePointer;
+                        if (ProcessHandle) {
+                            j->TlspLdrBlock[ProcessTlsInformation->TlsIndex] = ProcessTlsInformation->ThreadData[i].TlsModulePointer;
+                        }
+                        
                         ProcessTlsInformation->ThreadData[i].TlsModulePointer = Tls->ThreadData[i].TlsModulePointer;
                     }
                 }
@@ -711,9 +721,12 @@ NTSTATUS NTAPI MmpAllocateTlsEntry(
     Entry->TlsDirectory.Characteristics =
         *PULONG(Entry->TlsDirectory.AddressOfIndex) = TlsIndex;
 
+    RtlAcquireSRWLockExclusive(&MmpTlsListLock);
     InsertTailList(&MmpTlsList, &Entry->TlsEntryLinks);
+    RtlReleaseSRWLockExclusive(&MmpTlsListLock);
 
     *lpTlsEntry = Entry;
+    *lpTlsIndex = TlsIndex;
     return STATUS_SUCCESS;
 }
 
@@ -768,11 +781,7 @@ NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlAcquireSRWLockExclusive(&MmpTlsListLock);
-    InsertTailList(&MmpTlsList, &TlsEntry->TlsEntryLinks);
-    RtlReleaseSRWLockExclusive(&MmpTlsListLock);
-
-    auto ThreadCount = MmpGetThreadCount();
+    auto ThreadCount = MmpActiveThreadCount;
     auto success = true;
     auto Length = sizeof(PROCESS_TLS_INFORMATION) + (ThreadCount - 1) * sizeof(THREAD_TLS_INFORMATION);
     auto ProcessTlsInformation = PPROCESS_TLS_INFORMATION(RtlAllocateHeap(RtlProcessHeap(), HEAP_ZERO_MEMORY, Length));
@@ -821,12 +830,21 @@ NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
         Length
     );
 
+    for (DWORD i = 0; i < ProcessTlsInformation->ThreadDataCount; ++i) {
+        RtlFreeHeap(RtlProcessHeap(), 0, ProcessTlsInformation->ThreadData[i].TlsModulePointer);
+    }
+
     RtlFreeHeap(RtlProcessHeap(), 0, ProcessTlsInformation);
     return status;
 }
 
 
-VOID NTAPI MmpInitialize() {
+BOOL NTAPI MmpInitialize() {
+
+    //
+    // Capture thread count
+    //
+    MmpActiveThreadCount = MmpGetThreadCount();
 
     //
     // Initialize tlsp
@@ -865,4 +883,7 @@ VOID NTAPI MmpInitialize() {
     DetourAttach((PVOID*)&OriginNtSetInformationProcess, HookNtSetInformationProcess);
     DetourTransactionCommit();
 
+    return TRUE;
 }
+
+static const BOOL MmpStaticInitializer = MmpInitialize();

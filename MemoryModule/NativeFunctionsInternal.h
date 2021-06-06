@@ -1,11 +1,4 @@
 #pragma once
-#ifndef _HIDE_INTERNAL_
-#include "stdafx.h"
-#else
-#include <Windows.h>
-typedef HMODULE HMEMORYMODULE;
-#endif
-
 
 //Load dll from the provided buffer.
 NTSTATUS NTAPI LdrLoadDllMemory(

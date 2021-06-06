@@ -18,27 +18,33 @@ static PVOID ReadDllFile(LPCSTR FileName) {
     return buffer;
 }
 
-VOID NTAPI MmpInitialize();
-
-DWORD NTAPI Thread(PVOID) {
-    
-    return 0;
-}
-
 int main() {
+    HMEMORYMODULE hModule;
+    NTSTATUS status;
+    PVOID buffer = ReadDllFile("a.dll");
 
-    MmpInitialize();
+    if (!buffer) {
+        return 0;
+    }
 
-    HMODULE hModule = LoadLibrary(L"a.dll");
-    if (hModule) {
-
-        HANDLE hThread = CreateThread(nullptr, 0, Thread, nullptr, 0, nullptr);
-        if (hThread) {
-            WaitForSingleObject(hThread, INFINITE);
-            CloseHandle(hThread);
+    status = LdrLoadDllMemoryExW(
+        &hModule,   // ModuleHandle
+        nullptr,    // LdrEntry
+        0,          // Flags
+        buffer,     // Buffer
+        0,          // Reserved
+        nullptr,    // DllBaseName
+        nullptr     // DllFullName
+    );
+    if (NT_SUCCESS(status)) {
+        auto thread = GetProcAddress(MemoryModuleToModule(hModule), "thread");
+        if (thread) {
+            if (thread() != 0) {
+                printf("tls failed\n");
+            }
         }
 
-        FreeLibrary(hModule);
+        LdrUnloadDllMemory(hModule);
     }
 
     return 0;

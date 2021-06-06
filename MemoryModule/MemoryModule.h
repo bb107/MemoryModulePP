@@ -3,8 +3,6 @@
 #ifndef __MEMORY_MODULE_HEADER
 #define __MEMORY_MODULE_HEADER
 
-#include <windows.h>
-
 #pragma warning(disable:4996)
 struct ExportNameEntry {
 	LPCSTR name;

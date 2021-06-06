@@ -1,5 +1,4 @@
-#include "LoadDllMemoryApi.h"
-#include "Native.h"
+#include "stdafx.h"
 
 HMEMORYMODULE WINAPI LoadLibraryMemory(PVOID BufferAddress) {
 	HMEMORYMODULE hMemoryModule = nullptr;

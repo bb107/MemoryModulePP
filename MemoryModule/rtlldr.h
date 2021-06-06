@@ -1,5 +1,4 @@
 #pragma once
-#include "stdafx.h"
 
 PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(PVOID BaseAddress);
 

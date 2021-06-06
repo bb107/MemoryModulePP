@@ -1,10 +1,22 @@
 #include "stdafx.h"
 
+// MmpTls.cpp
+NTSTATUS NTAPI MmpReleaseTlsEntry(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry);
+
+// MmpTls.cpp
+NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry);
+
+
 static NTSTATUS NTAPI LdrpHandleTlsDataXp(PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	return STATUS_NOT_SUPPORTED;
 }
 
 NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall) {
+	*_LdrpHandleTlsData = MmpHandleTlsData;
+	*stdcall = true;
+	return STATUS_SUCCESS;
+
+
 	static PVOID _LdrpHandleTlsData_ = (PVOID)~0;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -144,6 +156,10 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 }
 
 NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* stdcall) {
+	*_LdrpReleaseTlsEntry = MmpReleaseTlsEntry;
+	*stdcall = true;
+	return STATUS_SUCCESS;
+
 	static PVOID _LdrpReleaseTlsEntry_ = (PVOID)~0;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -199,6 +215,8 @@ NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* std
 }
 
 static NTSTATUS NTAPI RtlInvokeTlsHandler(IN PLDR_DATA_TABLE_ENTRY LdrEntry, IN BOOLEAN Release) {
+	return STATUS_NOT_SUPPORTED;
+
 	struct _FUNCTION_SET {
 		bool stdcall;
 
@@ -242,9 +260,11 @@ static NTSTATUS NTAPI RtlInvokeTlsHandler(IN PLDR_DATA_TABLE_ENTRY LdrEntry, IN 
 }
 
 NTSTATUS NTAPI LdrpHandleTlsData(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
-	return RtlInvokeTlsHandler(LdrEntry, FALSE);
+	return MmpHandleTlsData(LdrEntry);
+	//return RtlInvokeTlsHandler(LdrEntry, FALSE);
 }
 
 NTSTATUS NTAPI LdrpReleaseTlsEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
-	return RtlInvokeTlsHandler(LdrEntry, TRUE);
+	return MmpReleaseTlsEntry(LdrEntry);
+	//return RtlInvokeTlsHandler(LdrEntry, TRUE);
 }
