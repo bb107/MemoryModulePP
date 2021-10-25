@@ -1,29 +1,11 @@
 #pragma once
+#pragma warning(disable:4996)
 
 #ifndef __MEMORY_MODULE_HEADER
 #define __MEMORY_MODULE_HEADER
 
-#pragma warning(disable:4996)
-struct ExportNameEntry {
-	LPCSTR name;
-	WORD idx;
-};
-typedef struct {
-	LPVOID address;
-	LPVOID alignedAddress;
-	SIZE_T size;
-	DWORD characteristics;
-	BOOL last;
-} SECTIONFINALIZEDATA, * PSECTIONFINALIZEDATA;
-typedef BOOL(WINAPI* DllEntryProc)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
-#ifdef _WIN64
-typedef struct POINTER_LIST {
-	struct POINTER_LIST* next;
-	void* address;
-} POINTER_LIST;
-#endif
 typedef HMODULE HMEMORYMODULE;
-typedef void* HMEMORYRSRC;
+
 typedef struct _MEMORYMODULE {
 	/*
 		---------------------------
@@ -40,51 +22,39 @@ typedef struct _MEMORYMODULE {
 		codes
 	*/
 	ULONG64 Signature;
-	__declspec(align(sizeof(size_t))) struct {
-		DWORD SizeofHeaders;
-		union {
-			struct {
-				//Status Flags
-				BYTE initialized : 1;
-				BYTE loadFromNtLoadDllMemory : 1;
-				BYTE underUnload : 1;
-				BYTE reservedStatusFlags : 5;
 
-				BYTE cbFlagsReserved;
+	DWORD SizeofHeaders;
+	union {
+		struct {
+			//Status Flags
+			BYTE initialized : 1;
+			BYTE loadFromNtLoadDllMemory : 1;
+			BYTE underUnload : 1;
+			BYTE reservedStatusFlags : 5;
 
-				//Load Flags
-				WORD MappedDll : 1;
-				WORD InsertInvertedFunctionTableEntry : 1;
-				WORD TlsHandled : 1;
-				WORD UseReferenceCount : 1;
-				WORD reservedLoadFlags : 12;
+			BYTE cbFlagsReserved;
 
-			};
-			DWORD dwFlags;
+			//Load Flags
+			WORD MappedDll : 1;
+			WORD InsertInvertedFunctionTableEntry : 1;
+			WORD TlsHandled : 1;
+			WORD UseReferenceCount : 1;
+			WORD reservedLoadFlags : 12;
+
 		};
+		DWORD dwFlags;
 	};
 
 	LPBYTE codeBase;						//codeBase == ImageBase
-	__declspec(align(sizeof(size_t))) struct {
-		PVOID lpReserved;
-	};
+	PVOID lpReserved;
 
 	HMODULE* hModulesList;					//Import module handles
-	__declspec(align(sizeof(size_t))) struct {
-		DWORD dwModulesCount;				//number of module handles
-		DWORD dwReserved;
-	};
+	DWORD dwModulesCount;					//number of module handles
+	DWORD dwReserved;
 
-	ExportNameEntry* nameExportsTable;
-	__declspec(align(sizeof(size_t))) struct {
-		DWORD pageSize;						//SYSTEM_INFO::dwPageSize
-		DWORD headers_align;				//headers_align == OptionalHeaders.BaseOfCode;
-	};
+	DWORD pageSize;						//SYSTEM_INFO::dwPageSize
+	DWORD headers_align;				//headers_align == OptionalHeaders.BaseOfCode;
 
-#ifdef _WIN64
-	POINTER_LIST* blockedMemory;
-	PVOID lpReserved2;
-#endif
 } MEMORYMODULE, * PMEMORYMODULE;
 
 
@@ -94,54 +64,12 @@ typedef struct _MEMORYMODULE {
 extern "C" {
 #endif
 
-    /**
-     * Load DLL from memory location with the given size.
-     *
-     * All dependencies are resolved using default LoadLibrary/GetProcAddress
-     * calls through the Windows API.
-     */
-    HMEMORYMODULE MemoryLoadLibrary(const void*);
+	NTSTATUS MemoryLoadLibrary(
+		_Out_ HMEMORYMODULE* MemoryModuleHandle,
+		_In_ LPCVOID data
+	);
 
-    /**
-     * Get address of exported method. Supports loading both by name and by
-     * ordinal value.
-     */
-    FARPROC MemoryGetProcAddress(HMEMORYMODULE, LPCSTR);
-
-    /**
-     * Free previously loaded DLL.
-     */
     bool MemoryFreeLibrary(HMEMORYMODULE);
-
-    /**
-     * Find the location of a resource with the specified type and name.
-     */
-    HMEMORYRSRC MemoryFindResource(HMEMORYMODULE, LPCTSTR, LPCTSTR);
-
-    /**
-     * Find the location of a resource with the specified type, name and language.
-     */
-    HMEMORYRSRC MemoryFindResourceEx(HMEMORYMODULE, LPCTSTR, LPCTSTR, WORD);
-
-    /**
-     * Get the size of the resource in bytes.
-     */
-    DWORD MemorySizeofResource(HMEMORYMODULE, HMEMORYRSRC);
-
-    /**
-     * Get a pointer to the contents of the resource.
-     */
-    LPVOID MemoryLoadResource(HMEMORYMODULE, HMEMORYRSRC);
-
-    /**
-     * Load a string resource.
-     */
-    int MemoryLoadString(HMEMORYMODULE, UINT, LPTSTR, int);
-
-    /**
-     * Load a string resource with a given language.
-     */
-    int MemoryLoadStringEx(HMEMORYMODULE, UINT, LPTSTR, int, WORD);
 
 	bool WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule);
 

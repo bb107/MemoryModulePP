@@ -732,8 +732,6 @@ NTSTATUS NTAPI MmpAllocateTlsEntry(
 
 NTSTATUS NTAPI MmpReleaseTlsEntry(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
     
-    NTSTATUS status = STATUS_NOT_FOUND;
-    
     RtlAcquireSRWLockExclusive(&MmpTlsListLock);
 
     for (auto entry = MmpTlsList.Flink; entry != &MmpTlsList; entry = entry->Flink) {
@@ -743,14 +741,13 @@ NTSTATUS NTAPI MmpReleaseTlsEntry(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
             RtlClearBit(&MmpTlsBitmap, p->TlsDirectory.Characteristics);
             RtlFreeHeap(RtlProcessHeap(), 0, p);
 
-            status = STATUS_SUCCESS;
             break;
         }
     }
 
     RtlReleaseSRWLockExclusive(&MmpTlsListLock);
 
-    return status;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {

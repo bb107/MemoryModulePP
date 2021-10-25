@@ -12,6 +12,8 @@
 	 _EX_ListHead->Blink = (Entry);\
 }
 
+typedef BOOL(WINAPI* PDLL_STARTUP_ROUTINE)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
+
 static PRTL_RB_TREE NTAPI RtlFindLdrpModuleBaseAddressIndex() {
 	static PRTL_RB_TREE LdrpModuleBaseAddressIndex = nullptr;
 	if (LdrpModuleBaseAddressIndex)return LdrpModuleBaseAddressIndex;
@@ -546,7 +548,7 @@ BOOL NTAPI LdrpCallInitializers(PMEMORYMODULE module, DWORD dwReason) {
 	if (headers->OptionalHeader.AddressOfEntryPoint) {
 		__try {
 			// notify library about attaching to process
-			if (((DllEntryProc)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)module->codeBase, dwReason, 0)) {
+			if (((PDLL_STARTUP_ROUTINE)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)module->codeBase, dwReason, 0)) {
 				module->initialized = TRUE;
 				return TRUE;
 			}
@@ -626,18 +628,9 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		}
 	}
 
-	if (!(*BaseAddress = MemoryLoadLibrary(BufferAddress))) {
-		switch (GetLastError()) {
-		case ERROR_BAD_EXE_FORMAT:
-			return STATUS_INVALID_IMAGE_FORMAT;
-		case ERROR_OUTOFMEMORY:
-			return STATUS_NO_MEMORY;
-		case ERROR_DLL_INIT_FAILED:
-			return STATUS_DLL_INIT_FAILED;
-		default:
-			return STATUS_UNSUCCESSFUL;
-		}
-	}
+	status = MemoryLoadLibrary(BaseAddress, BufferAddress);
+	if (!NT_SUCCESS(status))return status;
+
 	if (!(module = MapMemoryModuleHandle(*BaseAddress))) {
 		__fastfail(FAST_FAIL_FATAL_APP_EXIT);
 		DebugBreak();
@@ -766,8 +759,11 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 			if (!(count & ~1)) {
 				module->underUnload = true;
 				if (module->initialized) {
-					DllEntryProc DllEntry = (DllEntryProc)(LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint);
-					(*DllEntry)((HINSTANCE)module->codeBase, DLL_PROCESS_DETACH, 0);
+					PDLL_STARTUP_ROUTINE((LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))(
+						(HINSTANCE)module->codeBase,
+						DLL_PROCESS_DETACH,
+						0
+					);
 				}
 				if (module->MappedDll) {
 					if (module->InsertInvertedFunctionTableEntry) {

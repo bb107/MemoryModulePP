@@ -2,12 +2,25 @@
 #include <cstdio>
 #include <exception>
 #include <Windows.h>
-#include "../MemoryModule/Native.h"
+
 #pragma comment(lib,"ws2_32.lib")
 #pragma comment(lib,"wintrust.lib")
 #pragma comment(lib,"ntdll.lib")
 
 typedef NTSTATUS(NTAPI* PUSER_THREAD_START_ROUTINE)(_In_ PVOID ThreadParameter);
+
+#define NtCurrentProcess() (HANDLE)-1
+
+#ifdef _WIN64
+#define NtCurrentThreadLocalStoragePointer() *(LPVOID*)(LPBYTE(NtCurrentTeb()) + 0x58)
+#else
+#define NtCurrentThreadLocalStoragePointer() *(LPVOID*)(LPBYTE(NtCurrentTeb()) + 0x2C)
+#endif
+
+typedef struct _CLIENT_ID {
+    VOID* UniqueProcess;
+    VOID* UniqueThread;
+}CLIENT_ID, * PCLIENT_ID;
 
 extern "C"
 NTSYSAPI
@@ -103,13 +116,13 @@ int __test__() {
 
 static thread_local int x = 0xffccffdd;
 NTSTATUS WINAPI Thread(PVOID) {
-    printf("[1] ThreadLocalStoragePointer = %p\n", NtCurrentTeb()->ThreadLocalStoragePointer);
+    printf("[1] ThreadLocalStoragePointer = %p\n", NtCurrentThreadLocalStoragePointer());
     return x == 0xffccffdd ? 0 : 1;
 }
 
 int thread() {
     x = 2;
-    printf("[0] ThreadLocalStoragePointer = %p\n", NtCurrentTeb()->ThreadLocalStoragePointer);
+    printf("[0] ThreadLocalStoragePointer = %p\n", NtCurrentThreadLocalStoragePointer());
     HANDLE hThread;// = CreateThread(nullptr, 0, Thread, nullptr, 0, nullptr);
     RtlCreateUserThread(NtCurrentProcess(), nullptr, FALSE, 0, 0, 0, Thread, nullptr, &hThread, nullptr);
     DWORD ret = -1;
