@@ -167,6 +167,17 @@ static bool NTAPI RtlInitializeLdrDataTableEntry(
 	if (!headers)return false;
 	bool FlagsProcessed = false;
 
+	bool CorImage = false, CorIL = false;
+	auto& com = headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
+	if (com.Size && com.VirtualAddress) {
+		CorImage = true;
+
+		auto cor = PIMAGE_COR20_HEADER(LPBYTE(BaseAddress) + com.VirtualAddress);
+		if (cor->Flags & ReplacesCorHdrNumericDefines::COMIMAGE_FLAGS_ILONLY) {
+			CorIL = true;
+		}
+	}
+
 	switch (NtWindowsVersion()) {
 	case win10:
 	case win10_1:
@@ -198,6 +209,9 @@ static bool NTAPI RtlInitializeLdrDataTableEntry(
 		entry->ImageDll = entry->LoadNotificationsSent = entry->EntryProcessed =
 			entry->InLegacyLists = entry->InIndexes = entry->ProcessAttachCalled = true;
 		entry->InExceptionTable = !(dwFlags & LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION);
+		entry->CorImage = CorImage;
+		entry->CorILOnly = CorIL;
+
 		FlagsProcessed = true;
 	}
 
@@ -225,7 +239,10 @@ static bool NTAPI RtlInitializeLdrDataTableEntry(
 		LdrEntry->FullDllName = DllFullName;
 		LdrEntry->EntryPoint = (PVOID)((size_t)BaseAddress + headers->OptionalHeader.AddressOfEntryPoint);
 		LdrEntry->LoadCount = 1;
-		if (!FlagsProcessed) LdrEntry->Flags = LDRP_IMAGE_DLL | LDRP_ENTRY_INSERTED | LDRP_ENTRY_PROCESSED | LDRP_PROCESS_ATTACH_CALLED;
+		if (!FlagsProcessed) {
+			LdrEntry->Flags = LDRP_IMAGE_DLL | LDRP_ENTRY_INSERTED | LDRP_ENTRY_PROCESSED | LDRP_PROCESS_ATTACH_CALLED;
+			if (CorImage)LdrEntry->Flags |= LDRP_COR_IMAGE;
+		}
 		RtlInitializeListEntry(&LdrEntry->HashLinks);
 		return true;
 	}

@@ -21,7 +21,7 @@ static PVOID ReadDllFile(LPCSTR FileName) {
 int main() {
     HMEMORYMODULE hModule;
     NTSTATUS status;
-    PVOID buffer = ReadDllFile("a.dll");
+    PVOID buffer = ReadDllFile("System.Data.dll");
 
     if (!buffer) {
         return 0;
@@ -37,13 +37,6 @@ int main() {
         nullptr     // DllFullName
     );
     if (NT_SUCCESS(status)) {
-        auto thread = GetProcAddress(MemoryModuleToModule(hModule), "thread");
-        if (thread) {
-            if (thread() != 0) {
-                printf("tls failed\n");
-            }
-        }
-
         LdrUnloadDllMemory(hModule);
     }
 

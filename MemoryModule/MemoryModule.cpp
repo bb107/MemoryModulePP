@@ -68,6 +68,7 @@ NTSTATUS MemoryLoadLibrary(
 
 	PIMAGE_DOS_HEADER dos_header = nullptr;
 	PIMAGE_NT_HEADERS old_header = nullptr;
+	BOOLEAN CorImage = FALSE;
 	NTSTATUS status = STATUS_SUCCESS;
 
 	//
@@ -91,9 +92,22 @@ NTSTATUS MemoryLoadLibrary(
 		//
 		old_header = (PIMAGE_NT_HEADERS)((size_t)data + dos_header->e_lfanew);
 		if (old_header->Signature != IMAGE_NT_SIGNATURE ||
-			old_header->FileHeader.Machine != HOST_MACHINE ||
 			old_header->OptionalHeader.SectionAlignment & 1) {
 			status = STATUS_INVALID_IMAGE_FORMAT;
+			__leave;
+		}
+
+		//
+		// Determine whether it is a .NET assembly
+		//
+		auto& com = old_header->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
+		CorImage = com.Size && com.VirtualAddress;
+
+		//
+		// Match machine type
+		//
+		if (old_header->FileHeader.Machine != HOST_MACHINE) {
+			status = STATUS_IMAGE_MACHINE_TYPE_MISMATCH;
 			__leave;
 		}
 
@@ -228,12 +242,7 @@ NTSTATUS MemoryLoadLibrary(
 			PIMAGE_DATA_DIRECTORY dir = GET_HEADER_DICTIONARY(new_header, IMAGE_DIRECTORY_ENTRY_BASERELOC);
 			PIMAGE_BASE_RELOCATION_HEADER relocation = (PIMAGE_BASE_RELOCATION_HEADER)(LPBYTE(base) + dir->VirtualAddress);
 
-			if (dir->Size == 0 || dir->VirtualAddress == 0) {
-				if (!locationDelta) {
-					status = STATUS_INVALID_IMAGE_FORMAT;
-				}
-			}
-			else {
+			if (dir->Size && dir->VirtualAddress) {
 				while (relocation->VirtualAddress > 0) {
 					auto relInfo = (_REBASE_INFO*)&relocation->TypeOffset;
 					for (DWORD i = 0; i < relocation->TypeOffsetCount(); ++i, ++relInfo) {
@@ -343,7 +352,10 @@ NTSTATUS MemoryLoadLibrary(
 			LPVOID address = LPBYTE(base) + section->VirtualAddress;
 			SIZE_T size = AlignValueUp(section->Misc.VirtualSize, new_header->OptionalHeader.SectionAlignment);
 
-			if (section->Characteristics & IMAGE_SCN_MEM_DISCARDABLE) {
+			if (section->Characteristics & IMAGE_SCN_MEM_DISCARDABLE && !CorImage) {
+				//
+				// If it is a .NET assembly, we cannot release this memory block
+				//
 #pragma warning(disable:6250)
 				VirtualFree(address, size, MEM_DECOMMIT);
 #pragma warning(default:6250)
