@@ -30,6 +30,9 @@
 //tls support
 #include "rtltls.h"
 
+//DotNet support
+#include "MmpDotNet.h"
+
 //MemoryModulePP api interface
 #include "NativeFunctionsInternal.h"
 

@@ -1,4 +1,4 @@
-#include "../MemoryModule/LoadDllMemoryApi.h"
+#include "../MemoryModule/stdafx.h"
 #include <cstdio>
 #pragma warning(disable:4996)
 
@@ -21,22 +21,28 @@ static PVOID ReadDllFile(LPCSTR FileName) {
 int main() {
     HMEMORYMODULE hModule;
     NTSTATUS status;
-    PVOID buffer = ReadDllFile("System.Data.dll");
+    PVOID buffer = ReadDllFile("lib.dll");
 
     if (!buffer) {
         return 0;
     }
 
     status = LdrLoadDllMemoryExW(
-        &hModule,   // ModuleHandle
-        nullptr,    // LdrEntry
-        0,          // Flags
-        buffer,     // Buffer
-        0,          // Reserved
-        nullptr,    // DllBaseName
-        nullptr     // DllFullName
+        &hModule,                   // ModuleHandle
+        nullptr,                    // LdrEntry
+        LOAD_FLAGS_HOOK_DOT_NET,    // Flags
+        buffer,                     // Buffer
+        0,                          // Reserved
+        nullptr,                    // DllBaseName
+        nullptr                     // DllFullName
     );
-    if (NT_SUCCESS(status)) {
+    if (NT_SUCCESS(status) && status != STATUS_IMAGE_MACHINE_TYPE_MISMATCH) {
+        int result = 0;
+        typedef int(WINAPI* func)(int, int);
+
+        func f = (func)GetProcAddress(hModule, "Add");
+        if (f)result = f(128, 256);
+
         LdrUnloadDllMemory(hModule);
     }
 

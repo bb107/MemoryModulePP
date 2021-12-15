@@ -52,7 +52,7 @@ typedef struct _MEMORYMODULE {
 	DWORD dwModulesCount;					//number of module handles
 	DWORD dwReserved;
 
-	DWORD pageSize;						//SYSTEM_INFO::dwPageSize
+	DWORD dwImageFileSize;
 	DWORD headers_align;				//headers_align == OptionalHeaders.BaseOfCode;
 
 } MEMORYMODULE, * PMEMORYMODULE;
@@ -66,7 +66,8 @@ extern "C" {
 
 	NTSTATUS MemoryLoadLibrary(
 		_Out_ HMEMORYMODULE* MemoryModuleHandle,
-		_In_ LPCVOID data
+		_In_ LPCVOID data,
+		_In_ DWORD size
 	);
 
     bool MemoryFreeLibrary(HMEMORYMODULE);

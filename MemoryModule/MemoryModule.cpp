@@ -64,7 +64,8 @@ static SYSTEM_INFO sysInfo = []()->SYSTEM_INFO {
 
 NTSTATUS MemoryLoadLibrary(
 	_Out_ HMEMORYMODULE* MemoryModuleHandle,
-	_In_ LPCVOID data) {
+	_In_ LPCVOID data,
+	_In_ DWORD size) {
 
 	PIMAGE_DOS_HEADER dos_header = nullptr;
 	PIMAGE_NT_HEADERS old_header = nullptr;
@@ -122,7 +123,7 @@ NTSTATUS MemoryLoadLibrary(
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();
 	}
-	if (!NT_SUCCESS(status)) return status;
+	if (!NT_SUCCESS(status) || status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)return status;
 
 	//
 	// Reserve the address range of image
@@ -178,9 +179,10 @@ NTSTATUS MemoryLoadLibrary(
 	PMEMORYMODULE hMemoryModule = (PMEMORYMODULE)(base + old_header->OptionalHeader.SizeOfHeaders);
 	RtlZeroMemory(hMemoryModule, sizeof(MEMORYMODULE));
 	hMemoryModule->codeBase = base;
-	hMemoryModule->pageSize = sysInfo.dwPageSize;
+	hMemoryModule->dwImageFileSize = size;
 	hMemoryModule->Signature = MEMORY_MODULE_SIGNATURE;
 	hMemoryModule->SizeofHeaders = old_header->OptionalHeader.SizeOfHeaders;
+	hMemoryModule->lpReserved = (LPVOID)data;
 
 	do {
 		//

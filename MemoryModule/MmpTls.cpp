@@ -9,9 +9,15 @@
 //      [MMP_START_TLS_INDEX, MMP_MAXIMUM_TLS_INDEX)     Reserved for MemoryModule
 //
 
-#define MMP_START_TLS_INDEX 0x80    //128
+#define MMP_START_TLS_INDEX         0x80                            //128
 
-#define MMP_MAXIMUM_TLS_INDEX 0x100 //256
+#define MMP_MAXIMUM_TLS_INDEX       0x100                           //256
+
+#define MMP_TLSP_INDEX_BUFFER_SIZE  (MMP_MAXIMUM_TLS_INDEX / 8)     //32
+
+#if (((MMP_START_TLS_INDEX | MMP_MAXIMUM_TLS_INDEX) & 7) || (MMP_START_TLS_INDEX >= MMP_MAXIMUM_TLS_INDEX))
+#error "MMP_START_TLS_INDEX must be smaller than MMP_MAXIMUM_TLS_INDEX, and both are 8-bit aligned."
+#endif
 
 #define MmpAllocateTlsp()   (RtlAllocateHeap(\
                                 RtlProcessHeap(),\
@@ -137,26 +143,18 @@ PVOID NTAPI MmpQuerySystemInformation(
     return buffer;
 }
 
-PSYSTEM_PROCESS_INFORMATION NTAPI MmpGetProcessInformation() {
+DWORD NTAPI MmpGetThreadCount() {
+    DWORD result = 0;
     auto pid = NtCurrentProcessId();
 
     auto spi = PSYSTEM_PROCESS_INFORMATION(MmpQuerySystemInformation(SystemProcessInformation, nullptr));
-    PSYSTEM_PROCESS_INFORMATION result = nullptr;
     if (spi) {
         auto p = spi;
 
         while (true) {
 
             if (p->UniqueProcessId == pid) {
-                result = PSYSTEM_PROCESS_INFORMATION(RtlAllocateHeap(RtlProcessHeap(), 0, p->NextEntryOffset));
-                if (!result)break;
-
-                RtlCopyMemory(
-                    result,
-                    p,
-                    p->NextEntryOffset
-                );
-
+                result = p->NumberOfThreads;
                 break;
             }
 
@@ -165,18 +163,6 @@ PSYSTEM_PROCESS_INFORMATION NTAPI MmpGetProcessInformation() {
         }
 
         RtlFreeHeap(RtlProcessHeap(), 0, spi);
-    }
-
-    return result;
-}
-
-DWORD NTAPI MmpGetThreadCount() {
-    DWORD result = 0;
-    auto p = MmpGetProcessInformation();
-
-    if (p) {
-        result = p->NumberOfThreads;
-        RtlFreeHeap(RtlProcessHeap(), 0, p);
     }
 
     return result;
@@ -838,6 +824,12 @@ NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
 
 BOOL NTAPI MmpInitialize() {
 
+    auto tls = CONTAINING_RECORD(NtCurrentTeb()->ThreadLocalStoragePointer, TLS_VECTOR, TLS_VECTOR::ModuleTlsData);
+    if (tls && tls->Length > MMP_START_TLS_INDEX) {
+        RtlRaiseStatus(STATUS_NOT_SUPPORTED);
+        return FALSE;
+    }
+
     //
     // Capture thread count
     //
@@ -855,13 +847,13 @@ BOOL NTAPI MmpInitialize() {
     InitializeListHead(&MmpTlsList);
     RtlInitializeSRWLock(&MmpTlsListLock);
 
-    PULONG buffer = PULONG(RtlAllocateHeap(RtlProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ULONG) * 8));
+    PULONG buffer = PULONG(RtlAllocateHeap(RtlProcessHeap(), HEAP_ZERO_MEMORY, MMP_TLSP_INDEX_BUFFER_SIZE));
     if (!buffer) {
         RtlRaiseStatus(STATUS_NO_MEMORY);
     }
 
-    RtlFillMemory(buffer, sizeof(ULONG) * 4, -1);
-    RtlInitializeBitMap(&MmpTlsBitmap, buffer, 0x100);
+    RtlFillMemory(buffer, MMP_START_TLS_INDEX / 8, -1);
+    RtlInitializeBitMap(&MmpTlsBitmap, buffer, MMP_MAXIMUM_TLS_INDEX);
 
     if (NtCurrentTeb()->ThreadLocalStoragePointer) {
         if (!PreHookNtSetInformationProcess()) {

@@ -87,6 +87,9 @@
     <ClCompile Include="..\3rdparty\Detours\modules.cpp">
       <Filter>Source Files\3rdparty\Detours</Filter>
     </ClCompile>
+    <ClCompile Include="MmpDotNet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MemoryModule.h">
@@ -124,6 +127,9 @@
     </ClInclude>
     <ClInclude Include="..\3rdparty\Detours\detver.h">
       <Filter>Header Files\3rdparty\Detours</Filter>
+    </ClInclude>
+    <ClInclude Include="MmpDotNet.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

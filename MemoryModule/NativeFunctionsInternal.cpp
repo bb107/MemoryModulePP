@@ -1,17 +1,6 @@
 #include "stdafx.h"
 #include <random>
 
-#define InsertTailList(ListHead,Entry) {\
-	 PLIST_ENTRY _EX_Blink;\
-	 PLIST_ENTRY _EX_ListHead;\
-	 _EX_ListHead = (ListHead);\
-	 _EX_Blink = _EX_ListHead->Blink;\
-	 (Entry)->Flink = _EX_ListHead;\
-	 (Entry)->Blink = _EX_Blink;\
-	 _EX_Blink->Flink = (Entry);\
-	 _EX_ListHead->Blink = (Entry);\
-}
-
 typedef BOOL(WINAPI* PDLL_STARTUP_ROUTINE)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
 
 static PRTL_RB_TREE NTAPI RtlFindLdrpModuleBaseAddressIndex() {
@@ -491,10 +480,15 @@ BOOLEAN __forceinline WINAPI CheckSumBufferedFile(LPVOID BaseAddress, DWORD Buff
 	return HdrSum == CalcSum;
 }
 #endif
-BOOLEAN NTAPI RtlIsValidImageBuffer(PVOID Buffer) {
+BOOLEAN NTAPI RtlIsValidImageBuffer(
+	_In_ PVOID Buffer,
+	_Out_opt_ size_t* Size) {
 	
 	BOOLEAN result = FALSE;
 	__try {
+
+		if (Size)*Size = 0;
+
 		union {
 			PIMAGE_NT_HEADERS32 nt32;
 			PIMAGE_NT_HEADERS64 nt64;
@@ -532,6 +526,7 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(PVOID Buffer) {
 		}
 		IMAGE_FIRST_SECTION(headers.nt32);
 		ProbeForRead(Buffer, SizeofImage);
+		if (Size)*Size = SizeofImage;
 		result = CheckSumBufferedFile(Buffer, SizeofImage);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -602,7 +597,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	__try {
 		*BaseAddress = nullptr;
 		if (LdrEntry)*LdrEntry = nullptr;
-		if (!(dwFlags & LOAD_FLAGS_PASS_IMAGE_CHECK) && !RtlIsValidImageBuffer(BufferAddress))status = STATUS_INVALID_IMAGE_FORMAT;
+		if (!(dwFlags & LOAD_FLAGS_PASS_IMAGE_CHECK) && !RtlIsValidImageBuffer(BufferAddress, &BufferSize))status = STATUS_INVALID_IMAGE_FORMAT;
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();
@@ -645,8 +640,8 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		}
 	}
 
-	status = MemoryLoadLibrary(BaseAddress, BufferAddress);
-	if (!NT_SUCCESS(status))return status;
+	status = MemoryLoadLibrary(BaseAddress, BufferAddress, BufferSize);
+	if (!NT_SUCCESS(status) || status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)return status;
 
 	if (!(module = MapMemoryModuleHandle(*BaseAddress))) {
 		__fastfail(FAST_FAIL_FATAL_APP_EXIT);
@@ -712,6 +707,10 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
 		status = STATUS_DLL_INIT_FAILED;
 		LdrUnloadDllMemory(*BaseAddress);
+	}
+
+	if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {
+		MmpInitializeHooksForDotNet();
 	}
 
 	return status;
@@ -827,8 +826,8 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures) {
 		if (RtlFindLdrpHeap())features |= MEMORY_FEATURE_LDRP_HEAP;
 		if (RtlFindLdrpHashTable())features |= MEMORY_FEATURE_LDRP_HASH_TABLE;
 		if (RtlFindLdrpInvertedFunctionTable())features |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
-		if (NT_SUCCESS(RtlFindLdrpHandleTlsData(&pfn, &value)) && pfn)features |= MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA;
-		if (NT_SUCCESS(RtlFindLdrpReleaseTlsEntry(&pfn, &value) && pfn))features |= MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
+		features |= MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA | MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
+
 		if (features)features |= MEMORY_FEATURE_SUPPORT_VERSION;
 		*pFeatures = features;
 	}

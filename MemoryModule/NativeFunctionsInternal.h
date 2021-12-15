@@ -51,6 +51,9 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures);
 //Dont call LdrpHandleTlsData routine if this flag is specified.
 #define LOAD_FLAGS_NOT_HANDLE_TLS					0x00000008
 
+//Hook for dotnet dlls
+#define LOAD_FLAGS_HOOK_DOT_NET						0x00000010
+
 
 NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	OUT HMEMORYMODULE* BaseAddress,     // Output module base address
