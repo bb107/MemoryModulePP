@@ -630,9 +630,11 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
                 entry = entry->Flink;
             }
 
-            assert(found);
-            ProcessTlsInformation->ThreadData[i].Flags = Tls->ThreadData[i].Flags;
-            ProcessTlsInformation->ThreadData[i].ThreadId = Tls->ThreadData[i].ThreadId;
+            //assert(found);
+            if (found) {
+                ProcessTlsInformation->ThreadData[i].Flags = Tls->ThreadData[i].Flags;
+                ProcessTlsInformation->ThreadData[i].ThreadId = Tls->ThreadData[i].ThreadId;
+            }
         }
         LeaveCriticalSection(&MmpTlspLock);
 
