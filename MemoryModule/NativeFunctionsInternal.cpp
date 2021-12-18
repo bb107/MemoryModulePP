@@ -704,9 +704,14 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		}
 	}
 
+	if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {
+		MmpPreInitializeHooksForDotNet();
+	}
+
 	if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
 		status = STATUS_DLL_INIT_FAILED;
 		LdrUnloadDllMemory(*BaseAddress);
+		return status;
 	}
 
 	if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {

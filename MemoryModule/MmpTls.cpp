@@ -172,6 +172,7 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
 
     THREAD_CONTEXT Context;
     bool success = false;
+    PMMP_TLSP_RECORD record = nullptr;
 
     __try {
         RtlCopyMemory(
@@ -186,13 +187,16 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
         return GetExceptionCode();
     }
 
+    if (!NtCurrentTeb()->ThreadLocalStoragePointer) {
+        goto __skip_tls;
+    }
 
     //
     // Allocate and replace ThreadLocalStoragePointer for new thread
     //
     EnterCriticalSection(&MmpTlspLock);
 
-    auto record = PMMP_TLSP_RECORD(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(MMP_TLSP_RECORD)));
+    record = PMMP_TLSP_RECORD(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(MMP_TLSP_RECORD)));
     if (record) {
         record->TlspLdrBlock = (PVOID*)NtCurrentTeb()->ThreadLocalStoragePointer;
         record->TlspMmpBlock = (PVOID*)MmpAllocateTlsp();
@@ -259,6 +263,7 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
     ++MmpActiveThreadCount;
     LeaveCriticalSection(&MmpTlspLock);
 
+__skip_tls:
     return Context.ThreadStartRoutine(Context.ThreadParameter);
 }
 
@@ -272,7 +277,7 @@ NTSTATUS NTAPI HookNtCreateThread(
     _In_ PVOID InitialTeb,
     _In_ BOOLEAN CreateSuspended) {
     CONTEXT Context = *ThreadContext;
-    PTHREAD_CONTEXT _Context = PTHREAD_CONTEXT(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(_Context)));
+    PTHREAD_CONTEXT _Context = PTHREAD_CONTEXT(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(*_Context)));
     NTSTATUS status;
 
     if (!_Context)return STATUS_NO_MEMORY;
@@ -325,7 +330,7 @@ NTSTATUS NTAPI HookNtCreateThreadEx(
     _In_ SIZE_T StackSize,
     _In_ SIZE_T MaximumStackSize,
     _In_opt_ PVOID AttributeList) {
-    PTHREAD_CONTEXT Context = PTHREAD_CONTEXT(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(Context)));
+    PTHREAD_CONTEXT Context = PTHREAD_CONTEXT(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(*Context)));
     if (!Context) {
         return STATUS_NO_MEMORY;
     }

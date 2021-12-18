@@ -21,7 +21,7 @@ static PVOID ReadDllFile(LPCSTR FileName) {
 int main() {
     HMEMORYMODULE hModule;
     NTSTATUS status;
-    PVOID buffer = ReadDllFile("lib.dll");
+    PVOID buffer = ReadDllFile("ManagedLib_x64.dll");
 
     if (!buffer) {
         return 0;
@@ -38,10 +38,10 @@ int main() {
     );
     if (NT_SUCCESS(status) && status != STATUS_IMAGE_MACHINE_TYPE_MISMATCH) {
         int result = 0;
-        typedef int(WINAPI* func)(int, int);
+        typedef VOID(WINAPI* func)(LPCSTR);
 
-        func f = (func)GetProcAddress(hModule, "Add");
-        if (f)result = f(128, 256);
+        func f = (func)GetProcAddress(hModule, "ManagedExportFunc");
+        if (f)f("Hello World!");
 
         LdrUnloadDllMemory(hModule);
     }

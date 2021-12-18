@@ -12,23 +12,29 @@ typedef struct _MMP_FAKE_HANDLE_LIST_ENTRY {
     LIST_ENTRY InMmpFakeHandleList;
     HANDLE hObject;
     PVOID value;
+    BOOL bImageMapping;
 }MMP_FAKE_HANDLE_LIST_ENTRY, * PMMP_FAKE_HANDLE_LIST_ENTRY;
 
 static decltype(&CreateFileW) OriginCreateFileW = CreateFileW;
 static decltype(&GetFileInformationByHandle) OriginGetFileInformationByHandle = GetFileInformationByHandle;
 static decltype(&GetFileAttributesExW) OriginGetFileAttributesExW = GetFileAttributesExW;
+static decltype(&GetFileSize) OriginGetFileSize = GetFileSize;
+static decltype(&GetFileSizeEx) OriginGetFileSizeEx = GetFileSizeEx;
 static decltype(&CreateFileMappingW) OriginCreateFileMappingW = CreateFileMappingW;
 static decltype(&MapViewOfFileEx) OriginMapViewOfFileEx = MapViewOfFileEx;
+static decltype(&MapViewOfFile) OriginMapViewOfFile = MapViewOfFile;
 static decltype(&UnmapViewOfFile)OriginUnmapViewOfFile = UnmapViewOfFile;
 static decltype(&CloseHandle)OriginCloseHandle = CloseHandle;
-static GetFileVersion_T OriginGetFileVersion = nullptr;
+static GetFileVersion_T OriginGetFileVersion1 = nullptr;
+static GetFileVersion_T OriginGetFileVersion2 = nullptr;
 
 FILETIME AssemblyTimes;
 
 CRITICAL_SECTION MmpFakeHandleListLock;
 LIST_ENTRY MmpFakeHandleListHead;
 
-static BOOL Initialized = FALSE;
+static BOOLEAN PreHooked = FALSE;
+static BOOLEAN Initialized = FALSE;
 
 BOOL MmpIsMemoryModuleFileName(
     _In_ LPCWSTR lpFileName,
@@ -74,10 +80,12 @@ BOOL MmpIsMemoryModuleFileName(
 
 VOID MmpInsertHandleEntry(
     _In_ HANDLE hObject,
-    _In_ PVOID value) {
+    _In_ PVOID value,
+    _In_ BOOL bImageMapping = FALSE) {
     auto entry = (PMMP_FAKE_HANDLE_LIST_ENTRY)RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(MMP_FAKE_HANDLE_LIST_ENTRY));
     entry->hObject = hObject;
     entry->value = value;
+    entry->bImageMapping = bImageMapping;
 
     EnterCriticalSection(&MmpFakeHandleListLock);
     InsertTailList(&MmpFakeHandleListHead, &entry->InMmpFakeHandleList);
@@ -193,6 +201,49 @@ BOOL WINAPI HookGetFileAttributesExW(
     );
 }
 
+DWORD WINAPI HookGetFileSize(
+    _In_ HANDLE hFile,
+    _Out_opt_ LPDWORD lpFileSizeHigh) {
+
+    auto iter = MmpFindHandleEntry(hFile);
+    if (iter) {
+        if (lpFileSizeHigh)*lpFileSizeHigh = 0;
+
+        auto entry = (PLDR_DATA_TABLE_ENTRY)iter->value;
+        auto module = MapMemoryModuleHandle((HMEMORYMODULE)entry->DllBase);
+
+        return module->dwImageFileSize;
+    }
+    else {
+        return OriginGetFileSize(
+            hFile,
+            lpFileSizeHigh
+        );
+    }
+
+}
+
+BOOL WINAPI HookGetFileSizeEx(
+    _In_ HANDLE hFile,
+    _Out_ PLARGE_INTEGER lpFileSize) {
+
+    auto iter = MmpFindHandleEntry(hFile);
+    if (iter) {
+        auto entry = (PLDR_DATA_TABLE_ENTRY)iter->value;
+        auto module = MapMemoryModuleHandle((HMEMORYMODULE)entry->DllBase);
+
+        lpFileSize->QuadPart = module->dwImageFileSize;
+        return TRUE;
+    }
+    else {
+        return OriginGetFileSizeEx(
+            hFile,
+            lpFileSize
+        );
+    }
+
+}
+
 HANDLE WINAPI HookCreateFileMappingW(
     _In_     HANDLE hFile,
     _In_opt_ LPSECURITY_ATTRIBUTES lpFileMappingAttributes,
@@ -205,7 +256,7 @@ HANDLE WINAPI HookCreateFileMappingW(
     if (iter) {
         HANDLE hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         
-        MmpInsertHandleEntry(hEvent, iter->value);
+        MmpInsertHandleEntry(hEvent, iter->value, !!(flProtect & SEC_IMAGE));
         return hEvent;
     }
 
@@ -233,9 +284,13 @@ LPVOID WINAPI HookMapViewOfFileEx(
         auto entry = (PLDR_DATA_TABLE_ENTRY)iter->value;
         auto pModule = MapMemoryModuleHandle((HMEMORYMODULE)entry->DllBase);
         if (pModule) {
-            MemoryLoadLibrary(&hModule, pModule->lpReserved, pModule->dwImageFileSize);
-
-            if (hModule) MmpInsertHandleEntry(hModule, hModule);
+            if (iter->bImageMapping) {
+                MemoryLoadLibrary(&hModule, pModule->lpReserved, pModule->dwImageFileSize);
+                if (hModule) MmpInsertHandleEntry(hModule, hModule);
+            }
+            else {
+                return pModule->lpReserved;
+            }
         }
 
         return hModule;
@@ -249,6 +304,24 @@ LPVOID WINAPI HookMapViewOfFileEx(
         dwNumberOfBytesToMap,
         lpBaseAddress
     );
+}
+
+LPVOID WINAPI HookMapViewOfFile(
+    _In_ HANDLE hFileMappingObject,
+    _In_ DWORD dwDesiredAccess,
+    _In_ DWORD dwFileOffsetHigh,
+    _In_ DWORD dwFileOffsetLow,
+    _In_ SIZE_T dwNumberOfBytesToMap) {
+
+    return HookMapViewOfFileEx(
+        hFileMappingObject,
+        dwDesiredAccess,
+        dwFileOffsetHigh,
+        dwFileOffsetLow,
+        dwNumberOfBytesToMap,
+        nullptr
+    );
+
 }
 
 BOOL WINAPI HookUnmapViewOfFile(_In_ LPCVOID lpBaseAddress) {
@@ -309,7 +382,7 @@ HRESULT WINAPI HookGetFileVersion(
 
     }
 
-    return OriginGetFileVersion(
+    return OriginGetFileVersion1(
         szFilename,
         szBuffer,
         cchBuffer,
@@ -317,41 +390,73 @@ HRESULT WINAPI HookGetFileVersion(
     );
 }
 
-BOOL WINAPI MmpInitializeHooksForDotNet() {
-    HMODULE hModule = GetModuleHandleW(L"mscoreei.dll");
-    if (!hModule) {
-        RtlRaiseStatus(STATUS_NOT_SUPPORTED);
-        return FALSE;
-    }
-
-    OriginGetFileVersion = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
-    if (!OriginGetFileVersion) {
-        RtlRaiseStatus(STATUS_NOT_SUPPORTED);
-        return FALSE;
-    }
-
-    GetSystemTimeAsFileTime(&AssemblyTimes);
+BOOL WINAPI MmpPreInitializeHooksForDotNet() {
 
     EnterCriticalSection(NtCurrentPeb()->FastPebLock);
-    if (!Initialized) {
 
-        InitializeCriticalSection(&MmpFakeHandleListLock);
-        InitializeListHead(&MmpFakeHandleListHead);
+    if (!PreHooked) {
+        HMODULE hModule = LoadLibraryW(L"mscoree.dll");
+        if (hModule) {
+            OriginGetFileVersion2 = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
+            if (OriginGetFileVersion2) {
 
-        DetourTransactionBegin();
-        DetourUpdateThread(NtCurrentThread());
-        DetourAttach((PVOID*)&OriginCreateFileW, HookCreateFileW);
-        DetourAttach((PVOID*)&OriginGetFileInformationByHandle, HookGetFileInformationByHandle);
-        DetourAttach((PVOID*)&OriginGetFileAttributesExW, HookGetFileAttributesExW);
-        DetourAttach((PVOID*)&OriginCreateFileMappingW, HookCreateFileMappingW);
-        DetourAttach((PVOID*)&OriginMapViewOfFileEx, HookMapViewOfFileEx);
-        DetourAttach((PVOID*)&OriginUnmapViewOfFile, HookUnmapViewOfFile);
-        DetourAttach((PVOID*)&OriginCloseHandle, HookCloseHandle);
-        DetourAttach((PVOID*)&OriginGetFileVersion, HookGetFileVersion);
-        DetourTransactionCommit();
-        Initialized = TRUE;
+                GetSystemTimeAsFileTime(&AssemblyTimes);
+
+                InitializeCriticalSection(&MmpFakeHandleListLock);
+                InitializeListHead(&MmpFakeHandleListHead);
+
+                DetourTransactionBegin();
+                DetourUpdateThread(NtCurrentThread());
+
+                DetourAttach((PVOID*)&OriginCreateFileW, HookCreateFileW);
+                DetourAttach((PVOID*)&OriginGetFileInformationByHandle, HookGetFileInformationByHandle);
+                DetourAttach((PVOID*)&OriginGetFileAttributesExW, HookGetFileAttributesExW);
+                DetourAttach((PVOID*)&OriginGetFileSize, HookGetFileSize);
+                DetourAttach((PVOID*)&OriginGetFileSizeEx, HookGetFileSizeEx);
+                DetourAttach((PVOID*)&OriginCreateFileMappingW, HookCreateFileMappingW);
+                DetourAttach((PVOID*)&OriginMapViewOfFileEx, HookMapViewOfFileEx);
+                DetourAttach((PVOID*)&OriginMapViewOfFile, HookMapViewOfFile);
+                DetourAttach((PVOID*)&OriginUnmapViewOfFile, HookUnmapViewOfFile);
+                DetourAttach((PVOID*)&OriginCloseHandle, HookCloseHandle);
+                DetourAttach((PVOID*)&OriginGetFileVersion2, HookGetFileVersion);
+
+                DetourTransactionCommit();
+
+                PreHooked = TRUE;
+            }
+        }
     }
+
     LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
 
-    return TRUE;
+    return PreHooked;
+}
+
+BOOL WINAPI MmpInitializeHooksForDotNet() {
+    HMODULE hModule = GetModuleHandleW(L"mscoreei.dll");
+    if (hModule) {
+        OriginGetFileVersion1 = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
+        if (OriginGetFileVersion1) {
+
+            EnterCriticalSection(NtCurrentPeb()->FastPebLock);
+
+            if (!PreHooked) {
+                LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
+                return FALSE;
+            }
+
+            if (!Initialized) {
+                DetourTransactionBegin();
+                DetourUpdateThread(NtCurrentThread());
+                DetourAttach((PVOID*)&OriginGetFileVersion1, HookGetFileVersion);
+                DetourTransactionCommit();
+                Initialized = TRUE;
+            }
+
+            LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
