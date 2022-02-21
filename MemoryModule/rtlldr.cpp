@@ -1,4 +1,4 @@
-#include "rtlldr.h"
+#include "stdafx.h"
 #pragma warning(disable:4996)
 
 PLDR_DATA_TABLE_ENTRY const LdrpNtdllBase = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
@@ -57,18 +57,7 @@ ULONG NTAPI LdrHashEntry(IN const UNICODE_STRING& str, IN bool _xor) {
 }
 
 HANDLE NTAPI RtlFindLdrpHeap() {
-	PLIST_ENTRY ListHead, ListEntry;
-	PLDR_DATA_TABLE_ENTRY CurEntry;
-	MEMORY_BASIC_INFORMATION mbi{};
-	static HANDLE result = nullptr;
-	if (result)return result;
-
-	ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
-	ListEntry = ListHead->Flink;
-	if (ListHead == ListEntry)return result;
-	CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
-	NtQueryVirtualMemory(NtCurrentProcess(), CurEntry, MemoryBasicInformation, &mbi, sizeof(mbi), (PSIZE_T)&ListHead);
-	return result = mbi.AllocationBase;
+	return RtlProcessHeap();
 }
 
 PLIST_ENTRY NTAPI RtlFindLdrpHashTable() {

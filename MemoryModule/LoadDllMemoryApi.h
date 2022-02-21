@@ -1,5 +1,7 @@
 #pragma once
-#define _HIDE_INTERNAL_
+#include <Windows.h>
+
+typedef HMODULE HMEMORYMODULE;
 #include "NativeFunctionsInternal.h"
 
 #define MemoryModuleToModule(_hMemoryModule_) (_hMemoryModule_)

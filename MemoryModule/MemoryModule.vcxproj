@@ -31,6 +31,7 @@
     <ClCompile Include="..\3rdparty\Detours\modules.cpp" />
     <ClCompile Include="LoadDllMemoryApi.cpp" />
     <ClCompile Include="MemoryModule.cpp" />
+    <ClCompile Include="MmpDotNet.cpp" />
     <ClCompile Include="MmpTls.cpp" />
     <ClCompile Include="Native.cpp" />
     <ClCompile Include="NativeFunctionsInternal.cpp" />
@@ -45,6 +46,7 @@
     <ClInclude Include="..\3rdparty\Detours\detver.h" />
     <ClInclude Include="LoadDllMemoryApi.h" />
     <ClInclude Include="MemoryModule.h" />
+    <ClInclude Include="MmpDotNet.h" />
     <ClInclude Include="Native.h" />
     <ClInclude Include="NativeFunctionsInternal.h" />
     <ClInclude Include="rtlinv.h" />

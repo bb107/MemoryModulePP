@@ -1,5 +1,4 @@
 #pragma once
-#include "stdafx.h"
 
 #define RTL_VERIFY_FLAGS_MAJOR_VERSION	0
 #define RTL_VERIFY_FLAGS_MINOR_VERSION	1

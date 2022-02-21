@@ -1,11 +1,4 @@
 #pragma once
-#ifndef _HIDE_INTERNAL_
-#include "stdafx.h"
-#else
-#include <Windows.h>
-typedef HMODULE HMEMORYMODULE;
-#endif
-
 
 //Load dll from the provided buffer.
 NTSTATUS NTAPI LdrLoadDllMemory(
@@ -57,6 +50,9 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures);
 
 //Dont call LdrpHandleTlsData routine if this flag is specified.
 #define LOAD_FLAGS_NOT_HANDLE_TLS					0x00000008
+
+//Hook for dotnet dlls
+#define LOAD_FLAGS_HOOK_DOT_NET						0x00000010
 
 
 NTSTATUS NTAPI LdrLoadDllMemoryExW(

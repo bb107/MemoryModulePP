@@ -1,5 +1,4 @@
 #pragma once
-#include "stdafx.h"
 
 typedef struct _RTL_INVERTED_FUNCTION_TABLE_ENTRY_64 {
 	PIMAGE_RUNTIME_FUNCTION_ENTRY ExceptionDirectory;

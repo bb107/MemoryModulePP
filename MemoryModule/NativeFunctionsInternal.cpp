@@ -1,16 +1,7 @@
 #include "stdafx.h"
 #include <random>
 
-#define InsertTailList(ListHead,Entry) {\
-	 PLIST_ENTRY _EX_Blink;\
-	 PLIST_ENTRY _EX_ListHead;\
-	 _EX_ListHead = (ListHead);\
-	 _EX_Blink = _EX_ListHead->Blink;\
-	 (Entry)->Flink = _EX_ListHead;\
-	 (Entry)->Blink = _EX_Blink;\
-	 _EX_Blink->Flink = (Entry);\
-	 _EX_ListHead->Blink = (Entry);\
-}
+typedef BOOL(WINAPI* PDLL_STARTUP_ROUTINE)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
 
 static PRTL_RB_TREE NTAPI RtlFindLdrpModuleBaseAddressIndex() {
 	static PRTL_RB_TREE LdrpModuleBaseAddressIndex = nullptr;
@@ -165,6 +156,17 @@ static bool NTAPI RtlInitializeLdrDataTableEntry(
 	if (!headers)return false;
 	bool FlagsProcessed = false;
 
+	bool CorImage = false, CorIL = false;
+	auto& com = headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
+	if (com.Size && com.VirtualAddress) {
+		CorImage = true;
+
+		auto cor = PIMAGE_COR20_HEADER(LPBYTE(BaseAddress) + com.VirtualAddress);
+		if (cor->Flags & ReplacesCorHdrNumericDefines::COMIMAGE_FLAGS_ILONLY) {
+			CorIL = true;
+		}
+	}
+
 	switch (NtWindowsVersion()) {
 	case win10:
 	case win10_1:
@@ -196,6 +198,9 @@ static bool NTAPI RtlInitializeLdrDataTableEntry(
 		entry->ImageDll = entry->LoadNotificationsSent = entry->EntryProcessed =
 			entry->InLegacyLists = entry->InIndexes = entry->ProcessAttachCalled = true;
 		entry->InExceptionTable = !(dwFlags & LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION);
+		entry->CorImage = CorImage;
+		entry->CorILOnly = CorIL;
+
 		FlagsProcessed = true;
 	}
 
@@ -223,7 +228,10 @@ static bool NTAPI RtlInitializeLdrDataTableEntry(
 		LdrEntry->FullDllName = DllFullName;
 		LdrEntry->EntryPoint = (PVOID)((size_t)BaseAddress + headers->OptionalHeader.AddressOfEntryPoint);
 		LdrEntry->LoadCount = 1;
-		if (!FlagsProcessed) LdrEntry->Flags = LDRP_IMAGE_DLL | LDRP_ENTRY_INSERTED | LDRP_ENTRY_PROCESSED | LDRP_PROCESS_ATTACH_CALLED;
+		if (!FlagsProcessed) {
+			LdrEntry->Flags = LDRP_IMAGE_DLL | LDRP_ENTRY_INSERTED | LDRP_ENTRY_PROCESSED | LDRP_PROCESS_ATTACH_CALLED;
+			if (CorImage)LdrEntry->Flags |= LDRP_COR_IMAGE;
+		}
 		RtlInitializeListEntry(&LdrEntry->HashLinks);
 		return true;
 	}
@@ -472,10 +480,15 @@ BOOLEAN __forceinline WINAPI CheckSumBufferedFile(LPVOID BaseAddress, DWORD Buff
 	return HdrSum == CalcSum;
 }
 #endif
-BOOLEAN NTAPI RtlIsValidImageBuffer(PVOID Buffer) {
+BOOLEAN NTAPI RtlIsValidImageBuffer(
+	_In_ PVOID Buffer,
+	_Out_opt_ size_t* Size) {
 	
 	BOOLEAN result = FALSE;
 	__try {
+
+		if (Size)*Size = 0;
+
 		union {
 			PIMAGE_NT_HEADERS32 nt32;
 			PIMAGE_NT_HEADERS64 nt64;
@@ -513,6 +526,7 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(PVOID Buffer) {
 		}
 		IMAGE_FIRST_SECTION(headers.nt32);
 		ProbeForRead(Buffer, SizeofImage);
+		if (Size)*Size = SizeofImage;
 		result = CheckSumBufferedFile(Buffer, SizeofImage);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -546,7 +560,7 @@ BOOL NTAPI LdrpCallInitializers(PMEMORYMODULE module, DWORD dwReason) {
 	if (headers->OptionalHeader.AddressOfEntryPoint) {
 		__try {
 			// notify library about attaching to process
-			if (((DllEntryProc)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)module->codeBase, dwReason, 0)) {
+			if (((PDLL_STARTUP_ROUTINE)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)module->codeBase, dwReason, 0)) {
 				module->initialized = TRUE;
 				return TRUE;
 			}
@@ -583,7 +597,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	__try {
 		*BaseAddress = nullptr;
 		if (LdrEntry)*LdrEntry = nullptr;
-		if (!(dwFlags & LOAD_FLAGS_PASS_IMAGE_CHECK) && !RtlIsValidImageBuffer(BufferAddress))status = STATUS_INVALID_IMAGE_FORMAT;
+		if (!(dwFlags & LOAD_FLAGS_PASS_IMAGE_CHECK) && !RtlIsValidImageBuffer(BufferAddress, &BufferSize))status = STATUS_INVALID_IMAGE_FORMAT;
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();
@@ -626,18 +640,9 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		}
 	}
 
-	if (!(*BaseAddress = MemoryLoadLibrary(BufferAddress))) {
-		switch (GetLastError()) {
-		case ERROR_BAD_EXE_FORMAT:
-			return STATUS_INVALID_IMAGE_FORMAT;
-		case ERROR_OUTOFMEMORY:
-			return STATUS_NO_MEMORY;
-		case ERROR_DLL_INIT_FAILED:
-			return STATUS_DLL_INIT_FAILED;
-		default:
-			return STATUS_UNSUCCESSFUL;
-		}
-	}
+	status = MemoryLoadLibrary(BaseAddress, BufferAddress, BufferSize);
+	if (!NT_SUCCESS(status) || status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)return status;
+
 	if (!(module = MapMemoryModuleHandle(*BaseAddress))) {
 		__fastfail(FAST_FAIL_FATAL_APP_EXIT);
 		DebugBreak();
@@ -699,9 +704,18 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		}
 	}
 
+	if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {
+		MmpPreInitializeHooksForDotNet();
+	}
+
 	if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
 		status = STATUS_DLL_INIT_FAILED;
 		LdrUnloadDllMemory(*BaseAddress);
+		return status;
+	}
+
+	if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {
+		MmpInitializeHooksForDotNet();
 	}
 
 	return status;
@@ -766,8 +780,11 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 			if (!(count & ~1)) {
 				module->underUnload = true;
 				if (module->initialized) {
-					DllEntryProc DllEntry = (DllEntryProc)(LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint);
-					(*DllEntry)((HINSTANCE)module->codeBase, DLL_PROCESS_DETACH, 0);
+					PDLL_STARTUP_ROUTINE((LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))(
+						(HINSTANCE)module->codeBase,
+						DLL_PROCESS_DETACH,
+						0
+					);
 				}
 				if (module->MappedDll) {
 					if (module->InsertInvertedFunctionTableEntry) {
@@ -814,8 +831,8 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures) {
 		if (RtlFindLdrpHeap())features |= MEMORY_FEATURE_LDRP_HEAP;
 		if (RtlFindLdrpHashTable())features |= MEMORY_FEATURE_LDRP_HASH_TABLE;
 		if (RtlFindLdrpInvertedFunctionTable())features |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
-		if (NT_SUCCESS(RtlFindLdrpHandleTlsData(&pfn, &value)) && pfn)features |= MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA;
-		if (NT_SUCCESS(RtlFindLdrpReleaseTlsEntry(&pfn, &value) && pfn))features |= MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
+		features |= MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA | MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
+
 		if (features)features |= MEMORY_FEATURE_SUPPORT_VERSION;
 		*pFeatures = features;
 	}

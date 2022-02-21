@@ -299,7 +299,7 @@ static NTSTATUS NTAPI RtlProtectMrdata(IN SIZE_T Protect) {
 	NTSTATUS status;
 	PVOID tmp;
 	SIZE_T tmp_len;
-	SIZE_T old;
+	ULONG old;
 
 	if (!MrdataBase) {
 		MEMORY_BASIC_INFORMATION mbi{};
