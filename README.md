@@ -1,7 +1,5 @@
 # MemoryModulePP
 
-[![Build Status](https://travis-ci.org/joemccann/dillinger.svg?branch=master)](https://travis-ci.org/joemccann/dillinger)
-
 MemoryModulePP, used to load a DLL from memory. MemoryModulePP is compatible with Win32 API and supports exception handling.
 
 **MemoryModulePP is developed based on [MemoryModule][ref1].**
@@ -13,11 +11,12 @@ MemoryModulePP, used to load a DLL from memory. MemoryModulePP is compatible wit
   - Compatible with Win32 API (GetModuleHandle, GetModuleFileName, GetProcAddress and any Resource API)
   - Support for C++ exceptions and SEH
   - Optimized MEMORYMODULE structure
-  - Use reference counting, repeated loading of the same module will update the reference counting, please refer to NtLoadDllMemoryExW
-  - The above features can be turned off through the dwFlags parameter of NtLoadDllMemoryExW
+  - Use reference counting, repeated loading of the same module will update the reference counting, please refer to LdrLoadDllMemoryExW
+  - The above features can be turned off through the dwFlags parameter of LdrLoadDllMemoryExW
   - Support for TLS(Thread Local Storage)
   - DllMain can receive four types of notifications
   - Support forward export
+  - Provides limited support for .net assembly loading
 
 ## Tech
 
