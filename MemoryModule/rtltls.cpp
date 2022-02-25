@@ -37,8 +37,10 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 		//RS3
 		if (Versions[2] >= 16299) {
 			Size = 7;
+
+			if (Versions[2] >= 19042) Feature = "\x8D\x45\xAC\x50\x8D\x45\xA8\x50\x6A\x09\xB2\x01\x8B\x49\x18";
 			//19H2
-			if (Versions[2] >= 18363)Feature = "\x74\x33\x44\x8D\x43\x09";
+			else if (Versions[2] >= 18363)Feature = "\x74\x33\x44\x8D\x43\x09";
 			//RS5
 			else if (Versions[2] >= 17763) Feature = "\x8b\xc1\x8d\x4d\xbc\x51";
 			//RS4
@@ -54,7 +56,8 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 			else OffsetOfFunctionBegin = 0x43;
 #else
 			//19H2
-			if (Versions[2] == 18363) {
+			if (Versions[2] == 19042) OffsetOfFunctionBegin = 0x18;
+			else if (Versions[2] == 18363) {
 				Feature = "\x74\x25\x8b\xc1\x8d\x4d\xbc";
 				OffsetOfFunctionBegin = 0x16;
 			}
@@ -175,10 +178,11 @@ NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* std
 			status = STATUS_NOT_SUPPORTED;
 			break;
 		}
+		
 		if (Versions[2] >= 18362) {
-			Size = 0x10;
-			OffsetOfFunctionBegin = 0x2F;
-			Feature = "\x74\x26\x48\x8B\x00\x48\x39\x58\x08\x75\x5D\x48\x8B\x4B\x08";
+			Size = 21;
+			OffsetOfFunctionBegin = 0x1F;
+			Feature = "\x8B\xF0\x85\xF6\x74\x2C\x8B\x06\x39\x70\x04\x75\x4D\x8B\x4E\x04\x39\x31\x75\x46";
 			break;
 		}
 	}
