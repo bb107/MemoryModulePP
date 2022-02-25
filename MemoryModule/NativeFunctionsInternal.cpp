@@ -803,7 +803,7 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures) {
 	static DWORD features = 0;
 	NTSTATUS status = STATUS_SUCCESS;
 	PVOID pfn = nullptr;
-	bool value = false;
+	CallType value = stdcall;
 	__try {
 		if (features) {
 			*pFeatures = features;
@@ -814,8 +814,8 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures) {
 		if (RtlFindLdrpHeap())features |= MEMORY_FEATURE_LDRP_HEAP;
 		if (RtlFindLdrpHashTable())features |= MEMORY_FEATURE_LDRP_HASH_TABLE;
 		if (RtlFindLdrpInvertedFunctionTable())features |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
-		if (NT_SUCCESS(RtlFindLdrpHandleTlsData(&pfn, &value)) && pfn)features |= MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA;
-		if (NT_SUCCESS(RtlFindLdrpReleaseTlsEntry(&pfn, &value) && pfn))features |= MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
+		if (NT_SUCCESS(RtlFindLdrpHandleTlsData(&pfn, value)) && pfn)features |= MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA;
+		if (NT_SUCCESS(RtlFindLdrpReleaseTlsEntry(&pfn, value) && pfn))features |= MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
 		if (features)features |= MEMORY_FEATURE_SUPPORT_VERSION;
 		*pFeatures = features;
 	}

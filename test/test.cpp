@@ -101,7 +101,8 @@ end:
 }
 
 int main() {
-    //test_default();
+    test_default();
+    system("pause");
     //test_ws2_32();
     DWORD dwFeatures = 0;
     LdrQuerySystemMemoryModuleFeatures(&dwFeatures);

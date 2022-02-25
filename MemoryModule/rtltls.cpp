@@ -4,7 +4,7 @@ static NTSTATUS NTAPI LdrpHandleTlsDataXp(PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	return STATUS_NOT_SUPPORTED;
 }
 
-NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall) {
+NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, CallType & call_type) {
 	static PVOID _LdrpHandleTlsData_ = (PVOID)~0;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -15,9 +15,7 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 		}
 		else {
 			*_LdrpHandleTlsData = _LdrpHandleTlsData_ = nullptr;
-			if (stdcall) {
-				*stdcall = false;
-			}
+			call_type = thiscall;
 		}
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -37,8 +35,10 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 		//RS3
 		if (Versions[2] >= 16299) {
 			Size = 7;
+
+			if (Versions[2] >= 19042) Feature = "\x8D\x45\xAC\x50\x8D\x45\xA8\x50\x6A\x09\xB2\x01\x8B\x49\x18";
 			//19H2
-			if (Versions[2] >= 18363)Feature = "\x74\x33\x44\x8D\x43\x09";
+			else if (Versions[2] >= 18363)Feature = "\x74\x33\x44\x8D\x43\x09";
 			//RS5
 			else if (Versions[2] >= 17763) Feature = "\x8b\xc1\x8d\x4d\xbc\x51";
 			//RS4
@@ -54,7 +54,8 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 			else OffsetOfFunctionBegin = 0x43;
 #else
 			//19H2
-			if (Versions[2] == 18363) {
+			if (Versions[2] >= 19042) OffsetOfFunctionBegin = 0x18;
+			else if (Versions[2] == 18363) {
 				Feature = "\x74\x25\x8b\xc1\x8d\x4d\xbc";
 				OffsetOfFunctionBegin = 0x16;
 			}
@@ -130,7 +131,7 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 
 	default: {
 		*_LdrpHandleTlsData = LdrpHandleTlsDataXp;
-		*stdcall = true;
+		call_type = stdcall;
 		return status;
 	}
 	}
@@ -139,11 +140,23 @@ NTSTATUS NTAPI RtlFindLdrpHandleTlsData(PVOID* _LdrpHandleTlsData, bool* stdcall
 	if (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(RtlFindNtdllLdrEntry()->DllBase), ".text", &SearchContext)))
 		SearchContext.OutBufferPtr -= OffsetOfFunctionBegin;
 	if (!(*_LdrpHandleTlsData = _LdrpHandleTlsData_ = SearchContext.MemoryBlockInSection))return STATUS_NOT_SUPPORTED;
-	if (stdcall) *stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
+
+	if (RtlIsWindowsVersionOrGreater(6, 3, 0)) { 
+		if (RtlIsWindowsVersionOrGreater(10, 0, 19043)) { 
+			call_type = fastcall;
+		}
+		else {
+			call_type = thiscall;
+		}
+	}
+	else { 
+		call_type = stdcall;
+	}
+
 	return status;
 }
 
-NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* stdcall) {
+NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, CallType & call_type) {
 	static PVOID _LdrpReleaseTlsEntry_ = (PVOID)~0;
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -154,9 +167,7 @@ NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* std
 		}
 		else {
 			*_LdrpReleaseTlsEntry = _LdrpReleaseTlsEntry_ = nullptr;
-			if (stdcall) {
-				*stdcall = false;
-			}
+			call_type = thiscall;
 		}
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -175,10 +186,11 @@ NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* std
 			status = STATUS_NOT_SUPPORTED;
 			break;
 		}
+		
 		if (Versions[2] >= 18362) {
-			Size = 0x10;
-			OffsetOfFunctionBegin = 0x2F;
-			Feature = "\x74\x26\x48\x8B\x00\x48\x39\x58\x08\x75\x5D\x48\x8B\x4B\x08";
+			Size = 21;
+			OffsetOfFunctionBegin = 0x1F;
+			Feature = "\x8B\xF0\x85\xF6\x74\x2C\x8B\x06\x39\x70\x04\x75\x4D\x8B\x4E\x04\x39\x31\x75\x46";
 			break;
 		}
 	}
@@ -194,13 +206,24 @@ NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry(PVOID* _LdrpReleaseTlsEntry, bool* std
 	if (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(RtlFindNtdllLdrEntry()->DllBase), ".text", &SearchContext)))
 		SearchContext.OutBufferPtr -= OffsetOfFunctionBegin;
 	if (!(*_LdrpReleaseTlsEntry = _LdrpReleaseTlsEntry_ = SearchContext.MemoryBlockInSection))return STATUS_NOT_SUPPORTED;
-	if (stdcall)*stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
+	
+	if (RtlIsWindowsVersionOrGreater(6, 3, 0)) {
+		if (RtlIsWindowsVersionOrGreater(10, 0, 19043)) {
+			call_type = fastcall;
+		}
+		else {
+			call_type = thiscall;
+		}
+	}
+	else {
+		call_type = stdcall;
+	}
 	return status;
 }
 
 static NTSTATUS NTAPI RtlInvokeTlsHandler(IN PLDR_DATA_TABLE_ENTRY LdrEntry, IN BOOLEAN Release) {
 	struct _FUNCTION_SET {
-		bool stdcall;
+		CallType call_type = stdcall;
 
 		union {
 			struct {
@@ -215,8 +238,8 @@ static NTSTATUS NTAPI RtlInvokeTlsHandler(IN PLDR_DATA_TABLE_ENTRY LdrEntry, IN 
 		};
 
 		_FUNCTION_SET() {
-			if (!NT_SUCCESS(RtlFindLdrpHandleTlsData((PVOID*)(&this->Default.LdrpHandleTlsData), &this->stdcall)) ||
-				!NT_SUCCESS(RtlFindLdrpReleaseTlsEntry((PVOID*)(&this->Default.LdrpReleaseTlsEntry), nullptr))) {
+			if (!NT_SUCCESS(RtlFindLdrpHandleTlsData((PVOID*)(&this->Default.LdrpHandleTlsData), this->call_type)) ||
+				!NT_SUCCESS(RtlFindLdrpReleaseTlsEntry((PVOID*)(&this->Default.LdrpReleaseTlsEntry), this->call_type))) {
 				this->Default = {};
 				OutputDebugString(L"Can`t find both LdrpHandleTlsData and LdrpReleaseTlsEntry.\n");
 			}
