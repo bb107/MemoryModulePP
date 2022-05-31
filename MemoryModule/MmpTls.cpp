@@ -207,7 +207,7 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
             RtlCopyMemory(
                 record->TlspMmpBlock,
                 record->TlspLdrBlock,
-                size
+                size * sizeof(PVOID)
             );
 
             NtCurrentTeb()->ThreadLocalStoragePointer = record->TlspMmpBlock;
