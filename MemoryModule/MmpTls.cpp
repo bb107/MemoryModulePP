@@ -297,8 +297,6 @@ NTSTATUS NTAPI HookNtCreateThread(
     Context.Rdx = ULONG64(_Context);
 #endif
 
-    EnterCriticalSection(&MmpTlspLock);
-
     status = OriginNtCreateThread(
         ThreadHandle,
         DesiredAccess,
@@ -312,8 +310,6 @@ NTSTATUS NTAPI HookNtCreateThread(
     if (!NT_SUCCESS(status)) {
         RtlFreeHeap(RtlProcessHeap(), 0, _Context);
     }
-
-    LeaveCriticalSection(&MmpTlspLock);
 
     return status;
 }
@@ -338,8 +334,6 @@ NTSTATUS NTAPI HookNtCreateThreadEx(
     Context->ThreadStartRoutine = PTHREAD_START_ROUTINE(StartRoutine);
     Context->ThreadParameter = Argument;
 
-    EnterCriticalSection(&MmpTlspLock);
-
     NTSTATUS status = OriginNtCreateThreadEx(
         ThreadHandle,
         DesiredAccess,
@@ -356,8 +350,6 @@ NTSTATUS NTAPI HookNtCreateThreadEx(
     if (!NT_SUCCESS(status)) {
         RtlFreeHeap(RtlProcessHeap(), 0, Context);
     }
-
-    LeaveCriticalSection(&MmpTlspLock);
 
     return status;
 }

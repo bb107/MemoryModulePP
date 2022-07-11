@@ -19,31 +19,32 @@ static PVOID ReadDllFile(LPCSTR FileName) {
 }
 
 int main() {
-    HMEMORYMODULE hModule;
+    HMODULE hModule;
     NTSTATUS status;
-    PVOID buffer = ReadDllFile("ManagedLib_x64.dll");
+    PVOID buffer = ReadDllFile("C:\\Windows\\System32\\user32.dll");
+    if (!buffer) return 0;
 
-    if (!buffer) {
-        return 0;
-    }
+    hModule = GetModuleHandleA("user32.dll");
+    if (hModule)return 0;
 
     status = LdrLoadDllMemoryExW(
-        &hModule,                   // ModuleHandle
-        nullptr,                    // LdrEntry
-        LOAD_FLAGS_HOOK_DOT_NET,    // Flags
-        buffer,                     // Buffer
-        0,                          // Reserved
-        nullptr,                    // DllBaseName
-        nullptr                     // DllFullName
+        &hModule,                               // ModuleHandle
+        nullptr,                                // LdrEntry
+        0,                                      // Flags
+        buffer,                                 // Buffer
+        0,                                      // Reserved
+        L"user32.dll",                          // DllBaseName
+        L"C:\\Windows\\System32\\user32.dll"    // DllFullName
     );
     if (NT_SUCCESS(status) && status != STATUS_IMAGE_MACHINE_TYPE_MISMATCH) {
-        int result = 0;
-        typedef VOID(WINAPI* func)(LPCSTR);
 
-        func f = (func)GetProcAddress(hModule, "ManagedExportFunc");
-        if (f)f("Hello World!");
+        auto _MessageBoxW = (decltype(&MessageBoxW))GetProcAddress(hModule, "MessageBoxW");
+        _MessageBoxW(nullptr, L"Hello, from memory user32!", L"Caption", MB_OK);
 
-        LdrUnloadDllMemory(hModule);
+        //
+        // After calling MessageBox, we can't free it.
+        // 
+        //LdrUnloadDllMemory(hModule);
     }
 
     return 0;

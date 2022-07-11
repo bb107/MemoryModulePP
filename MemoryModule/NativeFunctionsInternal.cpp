@@ -280,57 +280,20 @@ static bool NTAPI RtlFreeLdrDataTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 
 #define FLAG_REFERENCE		0
 #define FLAG_DEREFERENCE	1
-static NTSTATUS NTAPI RtlUpdateReferenceCount(IN OUT PLDR_DATA_TABLE_ENTRY LdrEntry, IN DWORD Flags) {
+static NTSTATUS NTAPI RtlUpdateReferenceCount(IN OUT PMEMORYMODULE pModule, IN DWORD Flags) {
 	if (Flags != FLAG_REFERENCE && Flags != FLAG_DEREFERENCE)return STATUS_INVALID_PARAMETER_2;
-	switch (NtWindowsVersion()) {
-	case xp:
-	case vista:
-	case win7: {
-		if (Flags == FLAG_REFERENCE && LdrEntry->LoadCount != 0xffff)
-			++LdrEntry->LoadCount;
-		if (Flags == FLAG_DEREFERENCE && LdrEntry->LoadCount)
-			--LdrEntry->LoadCount;
-		break;
-	}
-	case win8:
-	case win8_1:
-	case win10:
-	case win10_1:
-	case win10_2: {
-		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN10)LdrEntry;
-		if (Flags == FLAG_REFERENCE) {
-			if (entry->ObsoleteLoadCount != 0xffff)++entry->ObsoleteLoadCount;
-			if (entry->DdagNode->LoadCount != 0xffffffff)++entry->DdagNode->LoadCount;
-		}
-		if (Flags == FLAG_DEREFERENCE) {
-			if (entry->ObsoleteLoadCount)--entry->ObsoleteLoadCount;
-			if (entry->DdagNode->LoadCount)--entry->DdagNode->LoadCount;
-		}
-		break;
-	}
-	default:return STATUS_UNSUCCESSFUL;
-	}
+
+	if (Flags == FLAG_REFERENCE && pModule->dwReferenceCount != 0xffffffff)
+		++pModule->dwReferenceCount;
+	if (Flags == FLAG_DEREFERENCE && pModule->dwReferenceCount)
+		--pModule->dwReferenceCount;
+
 	return STATUS_SUCCESS;
 }
-static NTSTATUS NTAPI RtlGetReferenceCount(IN PLDR_DATA_TABLE_ENTRY LdrEntry, OUT PULONG Count) {
-	switch (NtWindowsVersion()) {
-	case xp:
-	case vista:
-	case win7: {
-		*Count = LdrEntry->LoadCount;
-		break;
-	}
-	case win8:
-	case win8_1:
-	case win10:
-	case win10_1:
-	case win10_2: {
-		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN8)LdrEntry;
-		*Count = entry->DdagNode->LoadCount == entry->ObsoleteLoadCount ? entry->ObsoleteLoadCount : entry->DdagNode->LoadCount;
-		break;
-	}
-	default:return STATUS_UNSUCCESSFUL;
-	}
+static NTSTATUS NTAPI RtlGetReferenceCount(IN PMEMORYMODULE pModule, OUT PULONG Count) {
+
+	*Count = pModule->dwReferenceCount;
+
 	return STATUS_SUCCESS;
 }
 
@@ -366,7 +329,7 @@ static bool NTAPI RtlResolveDllNameUnicodeString(
 			FullLength += Length;
 		}
 		wcscpy(_DllFullName = new wchar_t[++FullLength], DllFullName);
-		if (add) wsprintfW(_DllFullName, L"%s\\%s", _DllFullName, _DllName);
+		if (add) swprintf(_DllFullName, L"%s\\%s", _DllFullName, _DllName);
 	}
 	else {
 		FullLength = 16 + 1 + Length; //hex(ULONG64) + '\\' + _DllName
@@ -631,7 +594,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 					(h1->OptionalHeader.SizeOfHeaders == h2->OptionalHeader.SizeOfHeaders)) {
 					/* This is our entry!, update load count and return success */
 					if (!module->UseReferenceCount || dwFlags & LOAD_FLAGS_NOT_USE_REFERENCE_COUNT)return STATUS_INVALID_PARAMETER_3;
-					RtlUpdateReferenceCount(CurEntry, FLAG_REFERENCE);
+					RtlUpdateReferenceCount(module, FLAG_REFERENCE);
 					*BaseAddress = (HMEMORYMODULE)CurEntry->DllBase;
 					if (LdrEntry)*LdrEntry = CurEntry;
 					return STATUS_SUCCESS;
@@ -650,72 +613,87 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		TerminateProcess(NtCurrentProcess(), STATUS_INVALID_ADDRESS);
 	}
 	module->loadFromNtLoadDllMemory = true;
+
 	headers = RtlImageNtHeader(*BaseAddress);
 	if (headers->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NO_SEH)dwFlags |= LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION;
+
 	if (dwFlags & LOAD_FLAGS_NOT_MAP_DLL) {
 
-		if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
-			status = STATUS_DLL_INIT_FAILED;
+		do {
+			status = MemoryResolveImportTable(LPBYTE(*BaseAddress), headers, module);
+			if (!NT_SUCCESS(status))break;
+
+			status = MemorySetSectionProtection(LPBYTE(*BaseAddress), headers);
+			if (!NT_SUCCESS(status))break;
+
+			if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
+				status = STATUS_DLL_INIT_FAILED;
+				break;
+			}
+
+		} while (false);
+
+		if (!NT_SUCCESS(status)) {
 			MemoryFreeLibrary(*BaseAddress);
 		}
 
 		return status;
 	}
 
-	status = LdrMapDllMemory(*BaseAddress, dwFlags, DllName, DllFullName, &ModuleEntry);
-	if (!NT_SUCCESS(status)) {
+	do {
+
+		status = LdrMapDllMemory(*BaseAddress, dwFlags, DllName, DllFullName, &ModuleEntry);
+		if (!NT_SUCCESS(status))break;
+
+		module->MappedDll = true;
+
+		status = MemoryResolveImportTable(LPBYTE(*BaseAddress), headers, module);
+		if (!NT_SUCCESS(status))break;
+
+		status = MemorySetSectionProtection(LPBYTE(*BaseAddress), headers);
+		if (!NT_SUCCESS(status))break;
+
+		if (!(dwFlags & LOAD_FLAGS_NOT_USE_REFERENCE_COUNT))module->UseReferenceCount = true;
+
+		if (!(dwFlags & LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION)) {
+			status = RtlInsertInvertedFunctionTable((PVOID)module->codeBase, headers->OptionalHeader.SizeOfImage);
+			if (!NT_SUCCESS(status)) break;
+
+			module->InsertInvertedFunctionTableEntry = true;
+		}
+
+		if (!(dwFlags & LOAD_FLAGS_NOT_HANDLE_TLS)) {
+			status = LdrpHandleTlsData(ModuleEntry);
+			if (!NT_SUCCESS(status)) {
+				if (dwFlags & LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS) status = 0x7fffffff;
+				if (!NT_SUCCESS(status))break;
+			}
+			else {
+				module->TlsHandled = true;
+			}
+		}
+
+		if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {
+			MmpPreInitializeHooksForDotNet();
+		}
+
+		if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
+			status = STATUS_DLL_INIT_FAILED;
+			break;
+		}
+
+		if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {
+			MmpInitializeHooksForDotNet();
+		}
+
+	} while (false);
+
+	if (NT_SUCCESS(status)) {
+		if (LdrEntry)*LdrEntry = ModuleEntry;
+	}
+	else {
 		LdrUnloadDllMemory(*BaseAddress);
 		*BaseAddress = nullptr;
-		return status;
-	}
-	module->MappedDll = true;
-
-	if (LdrEntry)*LdrEntry = ModuleEntry;
-
-	if (!(dwFlags & LOAD_FLAGS_NOT_USE_REFERENCE_COUNT))module->UseReferenceCount = true;
-
-	if (!(dwFlags & LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION)) {
-		status = RtlInsertInvertedFunctionTable((PVOID)module->codeBase, headers->OptionalHeader.SizeOfImage);
-		if (!NT_SUCCESS(status)) {
-			LdrUnloadDllMemory(*BaseAddress);
-			*BaseAddress = nullptr;
-			if (LdrEntry)*LdrEntry = nullptr;
-			return status;
-		}
-		module->InsertInvertedFunctionTableEntry = true;
-	}
-
-	if (!(dwFlags & LOAD_FLAGS_NOT_HANDLE_TLS)) {
-		status = LdrpHandleTlsData(ModuleEntry);
-		if (!NT_SUCCESS(status)) {
-			do {
-				if (dwFlags & LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS) {
-					status = 0x7fffffff;
-					break;
-				}
-				LdrUnloadDllMemory(*BaseAddress);
-				*BaseAddress = nullptr;
-				if (LdrEntry)*LdrEntry = nullptr;
-				return status;
-			} while (false);
-		}
-		else {
-			module->TlsHandled = true;
-		}
-	}
-
-	if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {
-		MmpPreInitializeHooksForDotNet();
-	}
-
-	if (!LdrpExecuteTLS(module) || !LdrpCallInitializers(module, DLL_PROCESS_ATTACH)) {
-		status = STATUS_DLL_INIT_FAILED;
-		LdrUnloadDllMemory(*BaseAddress);
-		return status;
-	}
-
-	if (dwFlags & LOAD_FLAGS_HOOK_DOT_NET) {
-		MmpInitializeHooksForDotNet();
 	}
 
 	return status;
@@ -774,7 +752,7 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 		PIMAGE_NT_HEADERS headers = RtlImageNtHeader(BaseAddress);
 		if (headers->OptionalHeader.SizeOfImage == CurEntry->SizeOfImage) {
 			if (module->UseReferenceCount) {
-				status = RtlGetReferenceCount(CurEntry, &count);
+				status = RtlGetReferenceCount(module, &count);
 				if (!NT_SUCCESS(status))return status;
 			}
 			if (!(count & ~1)) {
@@ -802,7 +780,7 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 				return STATUS_SUCCESS;
 			}
 			else {
-				return RtlUpdateReferenceCount(CurEntry, FLAG_DEREFERENCE);
+				return RtlUpdateReferenceCount(module, FLAG_DEREFERENCE);
 			}
 		}
 	}

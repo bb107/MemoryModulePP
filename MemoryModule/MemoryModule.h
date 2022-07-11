@@ -50,7 +50,7 @@ typedef struct _MEMORYMODULE {
 
 	HMODULE* hModulesList;					//Import module handles
 	DWORD dwModulesCount;					//number of module handles
-	DWORD dwReserved;
+	DWORD dwReferenceCount;
 
 	DWORD dwImageFileSize;
 	DWORD headers_align;				//headers_align == OptionalHeaders.BaseOfCode;
@@ -68,6 +68,17 @@ extern "C" {
 		_Out_ HMEMORYMODULE* MemoryModuleHandle,
 		_In_ LPCVOID data,
 		_In_ DWORD size
+	);
+
+	NTSTATUS MemoryResolveImportTable(
+		_In_ LPBYTE base,
+		_In_ PIMAGE_NT_HEADERS lpNtHeaders,
+		_In_ PMEMORYMODULE hMemoryModule
+	);
+
+	NTSTATUS MemorySetSectionProtection(
+		_In_ LPBYTE base,
+		_In_ PIMAGE_NT_HEADERS lpNtHeaders
 	);
 
     bool MemoryFreeLibrary(HMEMORYMODULE);

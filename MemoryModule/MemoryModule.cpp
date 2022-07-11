@@ -62,6 +62,129 @@ static SYSTEM_INFO sysInfo = []()->SYSTEM_INFO {
 	return tmp;
 }();
 
+NTSTATUS MemoryResolveImportTable(
+	_In_ LPBYTE base,
+	_In_ PIMAGE_NT_HEADERS lpNtHeaders,
+	_In_ PMEMORYMODULE hMemoryModule) {
+	NTSTATUS status = STATUS_SUCCESS;
+	PIMAGE_IMPORT_DESCRIPTOR importDesc = nullptr;
+	DWORD count = 0;
+
+	do {
+		__try {
+			PIMAGE_DATA_DIRECTORY dir = GET_HEADER_DICTIONARY(lpNtHeaders, IMAGE_DIRECTORY_ENTRY_IMPORT);
+			PIMAGE_IMPORT_DESCRIPTOR iat = nullptr;
+
+			if (dir && dir->Size) {
+				iat = importDesc = PIMAGE_IMPORT_DESCRIPTOR(lpNtHeaders->OptionalHeader.ImageBase + dir->VirtualAddress);
+			}
+
+			if (iat) {
+				while (iat->Name) {
+					++count;
+					++iat;
+				}
+			}
+
+			if (importDesc && count) {
+				if (!(hMemoryModule->hModulesList = new HMODULE[count])) {
+					status = STATUS_NO_MEMORY;
+					break;
+				}
+
+				RtlZeroMemory(
+					hMemoryModule->hModulesList,
+					sizeof(HMODULE) * count
+				);
+
+				for (DWORD i = 0; i < count; ++i, ++importDesc) {
+					uintptr_t* thunkRef;
+					FARPROC* funcRef;
+					HMODULE handle = LoadLibraryA((LPCSTR)(base + importDesc->Name));
+
+					if (!handle) {
+						status = STATUS_DLL_NOT_FOUND;
+						break;
+					}
+
+					hMemoryModule->hModulesList[hMemoryModule->dwModulesCount++] = handle;
+					thunkRef = (uintptr_t*)(base + (importDesc->OriginalFirstThunk ? importDesc->OriginalFirstThunk : importDesc->FirstThunk));
+					funcRef = (FARPROC*)(base + importDesc->FirstThunk);
+					while (*thunkRef) {
+						*funcRef = GetProcAddress(
+							handle,
+							IMAGE_SNAP_BY_ORDINAL(*thunkRef) ? (LPCSTR)IMAGE_ORDINAL(*thunkRef) : (LPCSTR)PIMAGE_IMPORT_BY_NAME(base + (*thunkRef))->Name
+						);
+						if (!*funcRef) {
+							status = STATUS_ENTRYPOINT_NOT_FOUND;
+							break;
+						}
+						++thunkRef;
+						++funcRef;
+					}
+
+					if (!NT_SUCCESS(status))break;
+				}
+
+			}
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			status = GetExceptionCode();
+		}
+	} while (false);
+
+	if (!NT_SUCCESS(status)) {
+		for (DWORD i = 0; i < hMemoryModule->dwModulesCount; ++i)
+			FreeLibrary(hMemoryModule->hModulesList[i]);
+
+		delete[]hMemoryModule->hModulesList;
+		hMemoryModule->hModulesList = nullptr;
+		hMemoryModule->dwModulesCount = 0;
+	}
+
+	return status;
+}
+
+NTSTATUS MemorySetSectionProtection(
+	_In_ LPBYTE base,
+	_In_ PIMAGE_NT_HEADERS lpNtHeaders) {
+	NTSTATUS status = STATUS_SUCCESS;
+	PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(lpNtHeaders);
+
+	//
+	// Determine whether it is a .NET assembly
+	//
+	auto& com = lpNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
+	bool CorImage = com.Size && com.VirtualAddress;
+
+	for (DWORD i = 0; i < lpNtHeaders->FileHeader.NumberOfSections; ++i, ++section) {
+		LPVOID address = LPBYTE(base) + section->VirtualAddress;
+		SIZE_T size = AlignValueUp(section->Misc.VirtualSize, lpNtHeaders->OptionalHeader.SectionAlignment);
+
+		if (section->Characteristics & IMAGE_SCN_MEM_DISCARDABLE && !CorImage) {
+			//
+			// If it is a .NET assembly, we cannot release this memory block
+			//
+#pragma warning(disable:6250)
+			VirtualFree(address, size, MEM_DECOMMIT);
+#pragma warning(default:6250)
+		}
+		else {
+			BOOL executable = (section->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0,
+				readable = (section->Characteristics & IMAGE_SCN_MEM_READ) != 0,
+				writeable = (section->Characteristics & IMAGE_SCN_MEM_WRITE) != 0;
+			DWORD protect = ProtectionFlags[executable][readable][writeable], oldProtect;
+
+			if (section->Characteristics & IMAGE_SCN_MEM_NOT_CACHED) protect |= PAGE_NOCACHE;
+
+			status = NtProtectVirtualMemory(NtCurrentProcess(), &address, &size, protect, &oldProtect);
+			if (!NT_SUCCESS(status))break;
+		}
+	}
+
+	return status;
+}
+
 NTSTATUS MemoryLoadLibrary(
 	_Out_ HMEMORYMODULE* MemoryModuleHandle,
 	_In_ LPCVOID data,
@@ -97,12 +220,6 @@ NTSTATUS MemoryLoadLibrary(
 			status = STATUS_INVALID_IMAGE_FORMAT;
 			__leave;
 		}
-
-		//
-		// Determine whether it is a .NET assembly
-		//
-		auto& com = old_header->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
-		CorImage = com.Size && com.VirtualAddress;
 
 		//
 		// Match machine type
@@ -183,6 +300,7 @@ NTSTATUS MemoryLoadLibrary(
 	hMemoryModule->Signature = MEMORY_MODULE_SIGNATURE;
 	hMemoryModule->SizeofHeaders = old_header->OptionalHeader.SizeOfHeaders;
 	hMemoryModule->lpReserved = (LPVOID)data;
+	hMemoryModule->dwReferenceCount = 1;
 
 	do {
 		//
@@ -264,115 +382,6 @@ NTSTATUS MemoryLoadLibrary(
 				}
 			}
 
-		}
-		if (!NT_SUCCESS(status))break;
-
-		//
-		// Build import table
-		//
-		PIMAGE_IMPORT_DESCRIPTOR importDesc = nullptr;
-		DWORD count = 0;
-
-		__try {
-			PIMAGE_DATA_DIRECTORY dir = GET_HEADER_DICTIONARY(new_header, IMAGE_DIRECTORY_ENTRY_IMPORT);
-			PIMAGE_IMPORT_DESCRIPTOR iat = nullptr;
-
-			status = STATUS_SUCCESS;
-
-			if (dir && dir->Size) {
-				iat = importDesc = PIMAGE_IMPORT_DESCRIPTOR(new_header->OptionalHeader.ImageBase + dir->VirtualAddress);
-			}
-
-			if (iat) {
-				while (iat->Name) {
-					++count;
-					++iat;
-				}
-			}
-
-			if (importDesc && count) {
-				if (!(hMemoryModule->hModulesList = new HMODULE[count])) {
-					status = STATUS_NO_MEMORY;
-					break;
-				}
-
-				RtlZeroMemory(
-					hMemoryModule->hModulesList,
-					sizeof(HMODULE) * count
-				);
-
-				for (DWORD i = 0; i < count; ++i, ++importDesc) {
-					uintptr_t* thunkRef;
-					FARPROC* funcRef;
-					HMODULE handle = LoadLibraryA((LPCSTR)(base + importDesc->Name));
-
-					if (!handle) {
-						status = STATUS_DLL_NOT_FOUND;
-						break;
-					}
-
-					hMemoryModule->hModulesList[hMemoryModule->dwModulesCount++] = handle;
-					thunkRef = (uintptr_t*)(base + (importDesc->OriginalFirstThunk ? importDesc->OriginalFirstThunk : importDesc->FirstThunk));
-					funcRef = (FARPROC*)(base + importDesc->FirstThunk);
-					while (*thunkRef) {
-						*funcRef = GetProcAddress(
-							handle,
-							IMAGE_SNAP_BY_ORDINAL(*thunkRef) ? (LPCSTR)IMAGE_ORDINAL(*thunkRef) : (LPCSTR)PIMAGE_IMPORT_BY_NAME(base + (*thunkRef))->Name
-						);
-						if (!*funcRef) {
-							status = STATUS_ENTRYPOINT_NOT_FOUND;
-							break;
-						}
-						++thunkRef;
-						++funcRef;
-					}
-
-					if (!NT_SUCCESS(status))break;
-				}
-
-			}
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER) {
-			status = GetExceptionCode();
-		}
-		if (!NT_SUCCESS(status)) {
-			for (DWORD i = 0; i < hMemoryModule->dwModulesCount; ++i)
-				FreeLibrary(hMemoryModule->hModulesList[i]);
-
-			delete[]hMemoryModule->hModulesList;
-			hMemoryModule->hModulesList = nullptr;
-			hMemoryModule->dwModulesCount = 0;
-
-			break;
-		}
-
-		//
-		// Set section memory protect
-		//
-		section = IMAGE_FIRST_SECTION(new_header);
-		for (DWORD i = 0; i < new_header->FileHeader.NumberOfSections; ++i, ++section) {
-			LPVOID address = LPBYTE(base) + section->VirtualAddress;
-			SIZE_T size = AlignValueUp(section->Misc.VirtualSize, new_header->OptionalHeader.SectionAlignment);
-
-			if (section->Characteristics & IMAGE_SCN_MEM_DISCARDABLE && !CorImage) {
-				//
-				// If it is a .NET assembly, we cannot release this memory block
-				//
-#pragma warning(disable:6250)
-				VirtualFree(address, size, MEM_DECOMMIT);
-#pragma warning(default:6250)
-			}
-			else {
-				BOOL executable = (section->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0,
-					readable = (section->Characteristics & IMAGE_SCN_MEM_READ) != 0,
-					writeable = (section->Characteristics & IMAGE_SCN_MEM_WRITE) != 0;
-				DWORD protect = ProtectionFlags[executable][readable][writeable], oldProtect;
-
-				if (section->Characteristics & IMAGE_SCN_MEM_NOT_CACHED) protect |= PAGE_NOCACHE;
-
-				status = NtProtectVirtualMemory(NtCurrentProcess(), &address, &size, protect, &oldProtect);
-				if (!NT_SUCCESS(status))break;
-			}
 		}
 		if (!NT_SUCCESS(status))break;
 
