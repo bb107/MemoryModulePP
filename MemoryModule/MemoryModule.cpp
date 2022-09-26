@@ -1,14 +1,4 @@
 #include "stdafx.h"
-#include <tchar.h>
-#include <algorithm>
-
-#if _MSC_VER
-#pragma warning(disable:4055)
-#pragma warning(error: 4244)
-#pragma warning(error: 4267)
-#pragma warning(disable:4996)
-#define inline __inline
-#endif
 
 #ifdef _WIN64
 #define HOST_MACHINE IMAGE_FILE_MACHINE_AMD64
@@ -24,7 +14,7 @@ PMEMORYMODULE WINAPI MapMemoryModuleHandle(HMEMORYMODULE hModule) {
 		if (!dos)return nullptr;
 		PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((LPBYTE)hModule + dos->e_lfanew);
 		if (!nt)return nullptr;
-		PMEMORYMODULE pModule = (PMEMORYMODULE)((LPBYTE)hModule + nt->OptionalHeader.SizeOfHeaders);
+		PMEMORYMODULE pModule = (PMEMORYMODULE)((LPBYTE)hModule + nt->OptionalHeader.SizeOfHeaders - sizeof(MEMORYMODULE));
 		if (!_ProbeForRead(pModule, sizeof(MEMORYMODULE)))return nullptr;
 		if (pModule->Signature != MEMORY_MODULE_SIGNATURE || (size_t)pModule->codeBase != nt->OptionalHeader.ImageBase)return nullptr;
 		return pModule;
@@ -290,10 +280,25 @@ NTSTATUS MemoryLoadLibrary(
 	);
 	new_header->OptionalHeader.ImageBase = (size_t)base;
 
+	//https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_optional_header32
+	int sizeOfHeaders = dos_header->e_lfanew +										// e_lfanew member of IMAGE_DOS_HEADER
+		4 +																			// 4 byte signature
+		sizeof(IMAGE_FILE_HEADER) +													// size of IMAGE_FILE_HEADER
+		sizeof(IMAGE_OPTIONAL_HEADER) +												// size of optional header
+		sizeof(IMAGE_SECTION_HEADER) * old_header->FileHeader.NumberOfSections;		// size of all section headers
+
+	//
+	// Make sure there have enough free space to embed our structure.
+	//
+	if (sizeOfHeaders + sizeof(MEMORYMODULE) > old_header->OptionalHeader.SizeOfHeaders) {
+		status = STATUS_NOT_SUPPORTED;
+		return status;
+	}
+
 	//
 	// Setup MemoryModule structure.
 	//
-	PMEMORYMODULE hMemoryModule = (PMEMORYMODULE)(base + old_header->OptionalHeader.SizeOfHeaders);
+	PMEMORYMODULE hMemoryModule = (PMEMORYMODULE)(base + old_header->OptionalHeader.SizeOfHeaders - sizeof(MEMORYMODULE));
 	RtlZeroMemory(hMemoryModule, sizeof(MEMORYMODULE));
 	hMemoryModule->codeBase = base;
 	hMemoryModule->dwImageFileSize = size;

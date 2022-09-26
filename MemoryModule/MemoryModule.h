@@ -53,7 +53,7 @@ typedef struct _MEMORYMODULE {
 	DWORD dwReferenceCount;
 
 	DWORD dwImageFileSize;
-	DWORD headers_align;				//headers_align == OptionalHeaders.BaseOfCode;
+	//DWORD headers_align;				//headers_align == OptionalHeaders.BaseOfCode;
 
 } MEMORYMODULE, * PMEMORYMODULE;
 
