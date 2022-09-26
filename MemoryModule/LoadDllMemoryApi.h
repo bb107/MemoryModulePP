@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 typedef HMODULE HMEMORYMODULE;
-#include "NativeFunctionsInternal.h"
+#include "Loader.h"
 
 #define MemoryModuleToModule(_hMemoryModule_) (_hMemoryModule_)
 

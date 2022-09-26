@@ -1,5 +1,20 @@
 #pragma once
 
+#define FLAG_REFERENCE		0
+#define FLAG_DEREFERENCE	1
+
+PLDR_DATA_TABLE_ENTRY NTAPI RtlAllocateDataTableEntry(IN PVOID BaseAddress);
+
+bool NTAPI RtlInitializeLdrDataTableEntry(OUT PLDR_DATA_TABLE_ENTRY LdrEntry, IN DWORD dwFlags, IN PVOID BaseAddress, IN UNICODE_STRING& DllBaseName, IN UNICODE_STRING& DllFullName);
+
+bool NTAPI RtlFreeLdrDataTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry);
+
+NTSTATUS NTAPI RtlUpdateReferenceCount(IN OUT PMEMORYMODULE pModule, IN DWORD Flags);
+
+NTSTATUS NTAPI RtlGetReferenceCount(IN PMEMORYMODULE pModule, OUT PULONG Count);
+
+VOID NTAPI RtlInsertMemoryTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry);
+
 PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(PVOID BaseAddress);
 
 PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(PCWSTR BaseName);
@@ -41,92 +56,11 @@ extern PLDR_DATA_TABLE_ENTRY const LdrpNtdllBase;
 #define LDR_GET_HASH_ENTRY(x)		(RtlUpcaseUnicodeChar((x)) & (LDR_HASH_TABLE_ENTRIES - 1))
 #define LDR_HASH_TABLE_ENTRIES		32
 
-//0x18 bytes (sizeof)
-typedef struct _RTL_BALANCED_NODE {
-	union {
-		_RTL_BALANCED_NODE* Children[2];					                //0x0
-		struct {
-			_RTL_BALANCED_NODE* Left;						                //0x0
-			_RTL_BALANCED_NODE* Right;				                        //0x8
-		};
-	};
-	union {
-		struct {
-			UCHAR Red : 1;                                                  //0x10
-			UCHAR Balance : 2;                                              //0x10
-		};
-		size_t ParentValue;                                                 //0x10
-	};
-}RTL_BALANCED_NODE, * PRTL_BALANCED_NODE;
-
-typedef struct _RTL_RB_TREE {
-	PRTL_BALANCED_NODE Root;
-	PRTL_BALANCED_NODE Min;
-} RTL_RB_TREE, * PRTL_RB_TREE;
-
 // RtlRbInsertNodeEx
 VOID NTAPI RtlRbInsertNodeEx(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Parent, IN BOOLEAN Right, OUT PRTL_BALANCED_NODE Node);
 // RtlRbRemoveNode
 VOID NTAPI RtlRbRemoveNode(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Node);
 
-enum _LDR_DLL_LOAD_REASON {
-	LoadReasonStaticDependency = 0,
-	LoadReasonStaticForwarderDependency = 1,
-	LoadReasonDynamicForwarderDependency = 2,
-	LoadReasonDelayloadDependency = 3,
-	LoadReasonDynamicLoad = 4,
-	LoadReasonAsImageLoad = 5,
-	LoadReasonAsDataLoad = 6,
-	LoadReasonUnknown = -1
-};
-
-//0x10 bytes (sizeof)
-struct _LDR_SERVICE_TAG_RECORD {
-	_LDR_SERVICE_TAG_RECORD* Next;									        //0x0
-	ULONG ServiceTag;                                                       //0x8
-};
-//0x8 bytes (sizeof)
-struct _LDRP_CSLIST {
-	struct _LDRP_CSLIST_DEPENDENT {
-		_SINGLE_LIST_ENTRY* NextDependentEntry;                                        //0x0
-		struct _LDR_DDAG_NODE* DependentDdagNode;
-	}Dependent;
-	struct _LDRP_CSLIST_INCOMMING {
-		_SINGLE_LIST_ENTRY* NextIncommingEntry;
-		struct _LDR_DDAG_NODE* IncommingDdagNode;
-	}Incomming;
-};
-//0x4 bytes (sizeof)
-enum _LDR_DDAG_STATE {
-	LdrModulesMerged = -5,
-	LdrModulesInitError = -4,
-	LdrModulesSnapError = -3,
-	LdrModulesUnloaded = -2,
-	LdrModulesUnloading = -1,
-	LdrModulesPlaceHolder = 0,
-	LdrModulesMapping = 1,
-	LdrModulesMapped = 2,
-	LdrModulesWaitingForDependencies = 3,
-	LdrModulesSnapping = 4,
-	LdrModulesSnapped = 5,
-	LdrModulesCondensed = 6,
-	LdrModulesReadyToInit = 7,
-	LdrModulesInitializing = 8,
-	LdrModulesReadyToRun = 9
-};
-//0x50 bytes (sizeof)
-struct _LDR_DDAG_NODE {
-	_LIST_ENTRY Modules;												    //0x0
-	_LDR_SERVICE_TAG_RECORD* ServiceTagList;							    //0x10
-	ULONG LoadCount;                                                        //0x18
-	ULONG LoadWhileUnloadingCount;                                          //0x1c
-	ULONG LowestLink;                                                       //0x20
-	_LDRP_CSLIST::_LDRP_CSLIST_DEPENDENT* Dependencies;						//0x28
-	_LDRP_CSLIST::_LDRP_CSLIST_INCOMMING* IncomingDependencies;				//0x30
-	_LDR_DDAG_STATE State;													//0x38
-	_SINGLE_LIST_ENTRY CondenseLink;										//0x40
-	ULONG PreorderNumber;                                                   //0x48
-};
 struct _LDR_DDAG_NODE_WIN8 {
 	_LIST_ENTRY Modules;							                        //0x0
 	_LDR_SERVICE_TAG_RECORD* ServiceTagList;				                //0x10
@@ -398,15 +332,9 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_2 {
 	UCHAR SigningLevel;                                                     //0x11c
 }LDR_DATA_TABLE_ENTRY_WIN10_2, * PLDR_DATA_TABLE_ENTRY_WIN10_2;
 
-ULONG NTAPI LdrHashEntry(IN const UNICODE_STRING& str, IN bool _xor = true);
-
-HANDLE NTAPI RtlFindLdrpHeap();
+ULONG NTAPI LdrHashEntry(IN UNICODE_STRING& str, IN bool _xor = true);
 
 PLIST_ENTRY NTAPI RtlFindLdrpHashTable();
-
-PVOID NTAPI RtlAllocateLdrpHeap(IN size_t size);
-
-BOOL NTAPI RtlFreeLdrpHeap(IN PVOID buffer);
 
 #define RtlInitializeListEntry(entry) ((entry)->Blink = (entry)->Flink = (entry))
 #define RtlInitializeSingleEntry(entry) ((entry->Next = (entry)))

@@ -1,38 +1,36 @@
 #pragma once
 
-#pragma warning (disable:4005)
 #ifndef WIN32_NO_STATUS
 #define WIN32_NO_STATUS
-#include <Windows.h>
+#include "../3rdparty/phnt/include/phnt_windows.h"
+#include "../3rdparty/phnt/include/phnt.h"
 #undef WIN32_NO_STATUS
 #include <ntstatus.h>
 #endif
-#pragma warning (default:4005)
+
+// offsetof()
+#include <cstddef>
 
 //memory module base support
 #include "MemoryModule.h"
 
-//nt layer support
-#include "Native.h"
-
-//memory block pattern search support
-#include "rtlsearch.h"
-
-//windows nt version support
-#include "rtlver.h"
-
 //LDR_DATA_TABLE_ENTRY
-#include "rtlldr.h"
+#include "LdrEntry.h"
 
 //rtl inverted function table for exception handling
-#include "rtlinv.h"
+#include "InvertedFunctionTable.h"
+
+//base address index
+#include "BaseAddressIndex.h"
 
 //tls support
-#include "rtltls.h"
+#include "MmpTls.h"
 
 //DotNet support
 #include "MmpDotNet.h"
 
 //MemoryModulePP api interface
-#include "NativeFunctionsInternal.h"
+#include "Loader.h"
 
+//utils
+#include "Utils.h"

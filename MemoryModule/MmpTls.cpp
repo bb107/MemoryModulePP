@@ -70,31 +70,6 @@ decltype(&NtCreateThreadEx) OriginNtCreateThreadEx = NtCreateThreadEx;
 decltype(&NtSetInformationProcess) OriginNtSetInformationProcess = NtSetInformationProcess;
 decltype(&LdrShutdownThread) OriginLdrShutdownThread = LdrShutdownThread;
 
-
-typedef struct _THREAD_TLS_INFORMATION {
-    ULONG Flags;
-
-    union {
-        PVOID* TlsVector;
-        PVOID TlsModulePointer;
-    };
-
-    HANDLE ThreadId;
-} THREAD_TLS_INFORMATION, * PTHREAD_TLS_INFORMATION;
-
-typedef struct _PROCESS_TLS_INFORMATION {
-    ULONG Reserved;
-    PROCESS_TLS_INFORMATION_TYPE OperationType;
-    ULONG ThreadDataCount;
-
-    union {
-        ULONG TlsIndex;
-        ULONG TlsVectorLength;
-    };
-
-    THREAD_TLS_INFORMATION ThreadData[ANYSIZE_ARRAY];
-} PROCESS_TLS_INFORMATION, * PPROCESS_TLS_INFORMATION;
-
 typedef struct _THREAD_CONTEXT {
     PTHREAD_START_ROUTINE ThreadStartRoutine;
     LPVOID ThreadParameter;
@@ -304,7 +279,7 @@ NTSTATUS NTAPI HookNtCreateThread(
         ProcessHandle,
         ClientId,
         &Context,
-        InitialTeb,
+        (PINITIAL_TEB)InitialTeb,
         CreateSuspended
     );
     if (!NT_SUCCESS(status)) {
@@ -345,7 +320,7 @@ NTSTATUS NTAPI HookNtCreateThreadEx(
         ZeroBits,
         StackSize,
         MaximumStackSize,
-        AttributeList
+        (PPS_ATTRIBUTE_LIST)AttributeList
     );
     if (!NT_SUCCESS(status)) {
         RtlFreeHeap(RtlProcessHeap(), 0, Context);
@@ -462,7 +437,7 @@ BOOL NTAPI PreHookNtSetInformationProcess() {
 
             status = NtSetInformationProcess(
                 NtCurrentProcess(),
-                ProcessResourceManagement,
+                PROCESSINFOCLASS::ProcessTlsInformation,
                 ProcessTlsInformation,
                 ProcessTlsInformationLength
             );
@@ -497,7 +472,7 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
     _In_reads_bytes_(ProcessInformationLength) PVOID ProcessInformation,
     _In_ ULONG ProcessInformationLength) {
 
-    if (ProcessInformationClass != ProcessResourceManagement) {
+    if (ProcessInformationClass != ProcessTlsInformation) {
         return OriginNtSetInformationProcess(
             ProcessHandle,
             ProcessInformationClass,
@@ -807,7 +782,7 @@ NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
 
     status = NtSetInformationProcess(
         nullptr,                        // hack
-        ProcessResourceManagement,
+        PROCESSINFOCLASS::ProcessTlsInformation,
         ProcessTlsInformation,
         Length
     );

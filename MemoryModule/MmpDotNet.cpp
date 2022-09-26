@@ -33,8 +33,8 @@ FILETIME AssemblyTimes;
 CRITICAL_SECTION MmpFakeHandleListLock;
 LIST_ENTRY MmpFakeHandleListHead;
 
-static BOOLEAN PreHooked = FALSE;
-static BOOLEAN Initialized = FALSE;
+static BOOLEAN g_PreHooked = FALSE;
+static BOOLEAN g_Initialized = FALSE;
 
 BOOL MmpIsMemoryModuleFileName(
     _In_ LPCWSTR lpFileName,
@@ -82,7 +82,7 @@ VOID MmpInsertHandleEntry(
     _In_ HANDLE hObject,
     _In_ PVOID value,
     _In_ BOOL bImageMapping = FALSE) {
-    auto entry = (PMMP_FAKE_HANDLE_LIST_ENTRY)RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(MMP_FAKE_HANDLE_LIST_ENTRY));
+    auto entry = (PMMP_FAKE_HANDLE_LIST_ENTRY)RtlAllocateHeap(RtlProcessHeap(), HEAP_ZERO_MEMORY, sizeof(MMP_FAKE_HANDLE_LIST_ENTRY));
     entry->hObject = hObject;
     entry->value = value;
     entry->bImageMapping = bImageMapping;
@@ -394,7 +394,7 @@ BOOL WINAPI MmpPreInitializeHooksForDotNet() {
 
     EnterCriticalSection(NtCurrentPeb()->FastPebLock);
 
-    if (!PreHooked) {
+    if (!g_PreHooked) {
         HMODULE hModule = LoadLibraryW(L"mscoree.dll");
         if (hModule) {
             OriginGetFileVersion2 = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
@@ -422,14 +422,14 @@ BOOL WINAPI MmpPreInitializeHooksForDotNet() {
 
                 DetourTransactionCommit();
 
-                PreHooked = TRUE;
+                g_PreHooked = TRUE;
             }
         }
     }
 
     LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
 
-    return PreHooked;
+    return g_PreHooked;
 }
 
 BOOL WINAPI MmpInitializeHooksForDotNet() {
@@ -440,17 +440,17 @@ BOOL WINAPI MmpInitializeHooksForDotNet() {
 
             EnterCriticalSection(NtCurrentPeb()->FastPebLock);
 
-            if (!PreHooked) {
+            if (!g_PreHooked) {
                 LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
                 return FALSE;
             }
 
-            if (!Initialized) {
+            if (!g_Initialized) {
                 DetourTransactionBegin();
                 DetourUpdateThread(NtCurrentThread());
                 DetourAttach((PVOID*)&OriginGetFileVersion1, HookGetFileVersion);
                 DetourTransactionCommit();
-                Initialized = TRUE;
+                g_Initialized = TRUE;
             }
 
             LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
