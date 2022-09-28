@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <exception>
 #include <Windows.h>
+#include <string>
+#include <stdexcept>
 
 #pragma comment(lib,"ws2_32.lib")
 #pragma comment(lib,"wintrust.lib")
@@ -85,6 +87,11 @@ int exception(int exception_type) {
             throw '1';
         case 2:
             throw std::exception("2");
+        case 3:
+        {
+            std::string s = "foo";
+            s.at(10);
+        }
         default:
             throw (DWORD64)-1;
         }
@@ -97,6 +104,10 @@ int exception(int exception_type) {
     catch (char val) {
         printf("exception code = %c\n", val);
         return val - '0';
+    }
+    catch (const std::out_of_range& e) {
+        printf("%s\n", e.what());
+        return 3;
     }
     catch (std::exception val) {
         printf("exception code = %s\n", val.what());
