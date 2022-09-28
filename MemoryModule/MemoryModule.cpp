@@ -8,20 +8,30 @@
 
 #define GET_HEADER_DICTIONARY(headers, idx)  &headers->OptionalHeader.DataDirectory[idx]
 
+int MmpSizeOfImageHeadersUnsafe(PVOID BaseAddress) {
+	PIMAGE_DOS_HEADER dh = (PIMAGE_DOS_HEADER)BaseAddress;
+	PIMAGE_NT_HEADERS nh = (PIMAGE_NT_HEADERS)((LPBYTE)BaseAddress + dh->e_lfanew);
+
+	//https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_optional_header32
+	int sizeOfHeaders = dh->e_lfanew +										// e_lfanew member of IMAGE_DOS_HEADER
+		4 +																	// 4 byte signature
+		sizeof(IMAGE_FILE_HEADER) +											// size of IMAGE_FILE_HEADER
+		sizeof(IMAGE_OPTIONAL_HEADER) +										// size of optional header
+		sizeof(IMAGE_SECTION_HEADER) * nh->FileHeader.NumberOfSections;		// size of all section headers
+	return sizeOfHeaders;
+}
+
 PMEMORYMODULE WINAPI MapMemoryModuleHandle(HMEMORYMODULE hModule) {
-	__try {
-		PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)hModule;
-		if (!dos)return nullptr;
-		PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((LPBYTE)hModule + dos->e_lfanew);
-		if (!nt)return nullptr;
-		PMEMORYMODULE pModule = (PMEMORYMODULE)((LPBYTE)hModule + nt->OptionalHeader.SizeOfHeaders - sizeof(MEMORYMODULE));
-		if (!_ProbeForRead(pModule, sizeof(MEMORYMODULE)))return nullptr;
-		if (pModule->Signature != MEMORY_MODULE_SIGNATURE || (size_t)pModule->codeBase != nt->OptionalHeader.ImageBase)return nullptr;
-		return pModule;
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		return nullptr;
-	}
+
+	if (!hModule)return nullptr;
+
+	PIMAGE_NT_HEADERS nh = RtlImageNtHeader(hModule);
+	if (!nh)return nullptr;
+
+	int sizeOfHeaders = MmpSizeOfImageHeadersUnsafe(hModule);
+	PMEMORYMODULE pModule = (PMEMORYMODULE)((LPBYTE)hModule + sizeOfHeaders);
+	if (pModule->Signature != MEMORY_MODULE_SIGNATURE || pModule->codeBase != (LPBYTE)hModule)return nullptr;
+	return pModule;
 }
 
 bool WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule) {
@@ -280,25 +290,22 @@ NTSTATUS MemoryLoadLibrary(
 	);
 	new_header->OptionalHeader.ImageBase = (size_t)base;
 
-	//https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_optional_header32
-	int sizeOfHeaders = dos_header->e_lfanew +										// e_lfanew member of IMAGE_DOS_HEADER
-		4 +																			// 4 byte signature
-		sizeof(IMAGE_FILE_HEADER) +													// size of IMAGE_FILE_HEADER
-		sizeof(IMAGE_OPTIONAL_HEADER) +												// size of optional header
-		sizeof(IMAGE_SECTION_HEADER) * old_header->FileHeader.NumberOfSections;		// size of all section headers
-
 	//
 	// Make sure there have enough free space to embed our structure.
 	//
-	if (sizeOfHeaders + sizeof(MEMORYMODULE) > old_header->OptionalHeader.SizeOfHeaders) {
-		status = STATUS_NOT_SUPPORTED;
-		return status;
+	int sizeOfHeaders = MmpSizeOfImageHeadersUnsafe(base);
+	PIMAGE_SECTION_HEADER pSections = IMAGE_FIRST_SECTION(new_header);
+	for (int i = 0; i < new_header->FileHeader.NumberOfSections; ++i) {
+		if (pSections[i].VirtualAddress < sizeOfHeaders + sizeof(MEMORYMODULE)) {
+			status = STATUS_NOT_SUPPORTED;
+			return status;
+		}
 	}
 
 	//
 	// Setup MemoryModule structure.
 	//
-	PMEMORYMODULE hMemoryModule = (PMEMORYMODULE)(base + old_header->OptionalHeader.SizeOfHeaders - sizeof(MEMORYMODULE));
+	PMEMORYMODULE hMemoryModule = (PMEMORYMODULE)(base + sizeOfHeaders);
 	RtlZeroMemory(hMemoryModule, sizeof(MEMORYMODULE));
 	hMemoryModule->codeBase = base;
 	hMemoryModule->dwImageFileSize = size;
