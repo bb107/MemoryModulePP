@@ -132,77 +132,7 @@ int test_user32() {
     return 0;
 }
 
-void test() {
-
-    NTSTATUS status;
-    HANDLE hSection;
-    OBJECT_ATTRIBUTES oa;
-    LARGE_INTEGER li;
-    UNICODE_STRING us;
-    SECTION_BASIC_INFORMATION sbi;
-    PVOID BaseAddress = 0;
-    SIZE_T ViewSize = 0;
-
-    li.QuadPart = 0x1000;
-
-    RtlInitUnicodeString(&us, L"\\Sessions\\2\\BaseNamedObjects\\SectionTest");
-
-    InitializeObjectAttributes(&oa, &us, 0, nullptr, nullptr);
-
-    status = NtCreateSection(
-        &hSection,
-        SECTION_ALL_ACCESS,
-        &oa,
-        &li,
-        PAGE_READWRITE,
-        SEC_COMMIT | SEC_BASED,
-        nullptr
-    );
-
-    if (NT_SUCCESS(status)) {
-
-        status = NtQuerySection(
-            hSection,
-            SECTION_INFORMATION_CLASS::SectionBasicInformation,
-            &sbi,
-            sizeof(sbi),
-            nullptr
-        );
-
-        status = NtMapViewOfSection(
-            hSection,
-            NtCurrentProcess(),
-            &BaseAddress,
-            0,
-            0,
-            nullptr,
-            &ViewSize,
-            ViewUnmap,
-            0,
-            PAGE_READWRITE
-        );
-        if (NT_SUCCESS(status)) {
-
-            status = NtQuerySection(
-                hSection,
-                SECTION_INFORMATION_CLASS::SectionBasicInformation,
-                &sbi,
-                sizeof(sbi),
-                nullptr
-            );
-
-            status = NtUnmapViewOfSection(
-                NtCurrentProcess(),
-                BaseAddress
-            );
-        }
-
-        NtClose(hSection);
-    }
-
-}
-
 int main() {
-    test();
+    test_a_dll();
     return 0;
 }

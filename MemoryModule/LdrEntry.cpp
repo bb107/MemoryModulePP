@@ -254,7 +254,7 @@ NTSTATUS NTAPI RtlGetReferenceCount(IN PMEMORYMODULE pModule, OUT PULONG Count) 
 
 VOID NTAPI RtlInsertMemoryTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	PPEB_LDR_DATA PebData = NtCurrentPeb()->Ldr;
-	PLIST_ENTRY LdrpHashTable = RtlFindLdrpHashTable();
+	PLIST_ENTRY LdrpHashTable = MmpGlobalDataPtr->LdrpHashTable;
 	ULONG i;
 
 	/* Insert into hash table */
@@ -317,26 +317,6 @@ ULONG NTAPI LdrHashEntry(IN UNICODE_STRING& str, IN bool _xor) {
 	}
 	if (_xor)result &= (LDR_HASH_TABLE_ENTRIES - 1);
 	return result;
-}
-
-PLIST_ENTRY NTAPI RtlFindLdrpHashTable() {
-	static PLIST_ENTRY list = nullptr;
-	if (list) return list;
-
-	PLIST_ENTRY head = &NtCurrentPeb()->Ldr->InInitializationOrderModuleList, entry = head->Flink;
-	PLDR_DATA_TABLE_ENTRY CurEntry = nullptr;
-	while (head != entry) {
-		CurEntry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, LDR_DATA_TABLE_ENTRY::InInitializationOrderLinks);
-		entry = entry->Flink;
-		if (CurEntry->HashLinks.Flink == &CurEntry->HashLinks)continue;
-		list = CurEntry->HashLinks.Flink;
-		if (list->Flink == &CurEntry->HashLinks) {
-			list = (decltype(list))((size_t)CurEntry->HashLinks.Flink - LdrHashEntry(CurEntry->BaseDllName) * sizeof(_LIST_ENTRY));
-			break;
-		}
-		list = nullptr;
-	}
-	return list;
 }
 
 size_t NTAPI LdrpDataTableEntrySize() {

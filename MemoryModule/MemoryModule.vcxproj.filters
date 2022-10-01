@@ -221,9 +221,15 @@
     <ClInclude Include="..\3rdparty\phnt\include\winsta.h">
       <Filter>Header Files\3rdparty\phnt</Filter>
     </ClInclude>
+    <ClInclude Include="MmpGlobalData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="MemoryModulePP.def">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>

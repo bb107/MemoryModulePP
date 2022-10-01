@@ -86,3 +86,5 @@ typedef enum _WINDOWS_VERSION {
 }WINDOWS_VERSION;
 
 WINDOWS_VERSION NTAPI NtWindowsVersion();
+
+int NTAPI RtlCaptureImageExceptionValues(PVOID BaseAddress, PDWORD SEHandlerTable, PDWORD SEHandlerCount);

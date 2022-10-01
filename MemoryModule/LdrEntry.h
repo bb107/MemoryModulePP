@@ -334,8 +334,6 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_2 {
 
 ULONG NTAPI LdrHashEntry(IN UNICODE_STRING& str, IN bool _xor = true);
 
-PLIST_ENTRY NTAPI RtlFindLdrpHashTable();
-
 #define RtlInitializeListEntry(entry) ((entry)->Blink = (entry)->Flink = (entry))
 #define RtlInitializeSingleEntry(entry) ((entry->Next = (entry)))
 

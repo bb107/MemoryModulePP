@@ -285,24 +285,10 @@ VOID NTAPI LdrUnloadDllMemoryAndExitThread(IN HMEMORYMODULE BaseAddress, IN DWOR
 	RtlExitUserThread(dwExitCode);
 }
 
-NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures) {
-	static DWORD features = 0;
+NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(_Out_ PDWORD pFeatures) {
 	NTSTATUS status = STATUS_SUCCESS;
-	PVOID pfn = nullptr;
-	bool value = false;
 	__try {
-		if (features) {
-			*pFeatures = features;
-			return status;
-		} 
-
-		if (RtlFindLdrpModuleBaseAddressIndex())features |= MEMORY_FEATURE_MODULE_BASEADDRESS_INDEX;
-		if (RtlFindLdrpHashTable())features |= MEMORY_FEATURE_LDRP_HASH_TABLE;
-		if (RtlFindLdrpInvertedFunctionTable())features |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
-		features |= MEMORY_FEATURE_LDRP_HEAP | MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA | MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
-
-		if (features)features |= MEMORY_FEATURE_SUPPORT_VERSION;
-		*pFeatures = features;
+		*pFeatures = MmpGlobalDataPtr->MmpFeatures;
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();

@@ -17,7 +17,7 @@ NTSTATUS NTAPI LdrLoadDllMemory(
 #define MEMORY_FEATURE_ALL                          0x0000007f
 
 //Get the implementation of the currently running operating system.
-NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(OUT PDWORD pFeatures);
+NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(_Out_ PDWORD pFeatures);
 
 
 /*
@@ -78,6 +78,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExA(
 //Unload modules previously loaded from memory
 NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress);
 
+#ifndef _USRDLL
 #ifdef _WIN64
 #pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread")
 #pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=LdrUnloadDllMemoryAndExitThread")
@@ -85,8 +86,8 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress);
 #pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread=_LdrUnloadDllMemoryAndExitThread@8")
 #pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=_LdrUnloadDllMemoryAndExitThread@8")
 #endif
-//FreeLibraryMemoryAndExitThread = GetProcAddress(GetModuleHandleW(nullptr), "FreeLibraryMemoryAndExitThread");
-//FreeLibraryMemoryAndExitThread(hModule, 0);
+#endif
+
 extern "C" {
 	__declspec(noreturn) VOID NTAPI LdrUnloadDllMemoryAndExitThread(IN HMEMORYMODULE BaseAddress, IN DWORD dwExitCode);
 }

@@ -408,3 +408,31 @@ WINDOWS_VERSION NTAPI NtWindowsVersion() {
 	}
 	return version = invalid;
 }
+
+int NTAPI RtlCaptureImageExceptionValues(PVOID BaseAddress, PDWORD SEHandlerTable, PDWORD SEHandlerCount) {
+	PIMAGE_LOAD_CONFIG_DIRECTORY pLoadConfigDirectory;
+	PIMAGE_COR20_HEADER pCor20;
+	ULONG Size;
+
+	//check if no seh
+	if (RtlImageNtHeader(BaseAddress)->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NO_SEH) {
+		*SEHandlerTable = *SEHandlerCount = -1;
+		return 0;
+	}
+
+	//get seh table and count
+	pLoadConfigDirectory = (decltype(pLoadConfigDirectory))RtlImageDirectoryEntryToData(BaseAddress, TRUE, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, &Size);
+	if (pLoadConfigDirectory) {
+		if (Size == 0x40 && pLoadConfigDirectory->Size >= 0x48u) {
+			if (pLoadConfigDirectory->SEHandlerTable && pLoadConfigDirectory->SEHandlerCount) {
+				*SEHandlerTable = pLoadConfigDirectory->SEHandlerTable;
+				return *SEHandlerCount = pLoadConfigDirectory->SEHandlerCount;
+			}
+		}
+	}
+
+	//is .net core ?
+	pCor20 = (decltype(pCor20))RtlImageDirectoryEntryToData(BaseAddress, TRUE, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR, &Size);
+	*SEHandlerTable = *SEHandlerCount = ((pCor20 && pCor20->Flags & 1) ? -1 : 0);
+	return 0;
+}

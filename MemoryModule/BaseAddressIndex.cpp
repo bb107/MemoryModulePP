@@ -1,35 +1,7 @@
 #include "stdafx.h"
 
-PRTL_RB_TREE NTAPI RtlFindLdrpModuleBaseAddressIndex() {
-	static PRTL_RB_TREE LdrpModuleBaseAddressIndex = nullptr;
-	if (LdrpModuleBaseAddressIndex)return LdrpModuleBaseAddressIndex;
-
-	PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(RtlFindNtdllLdrEntry());
-	PRTL_BALANCED_NODE node = nullptr;
-	if (!nt10 || !RtlIsWindowsVersionOrGreater(6, 2, 0))return nullptr;
-	node = &nt10->BaseAddressIndexNode;
-	while (node->ParentValue & (~7)) node = decltype(node)(node->ParentValue & (~7));
-
-	if (!node->Red) {
-		BYTE count = 0;
-		PRTL_RB_TREE tmp = nullptr;
-		SEARCH_CONTEXT SearchContext{};
-		SearchContext.MemoryBuffer = &node;
-		SearchContext.BufferLength = sizeof(size_t);
-		while (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection((HMODULE)nt10->DllBase, ".data", &SearchContext))) {
-			if (count++)return nullptr;
-			tmp = (decltype(tmp))SearchContext.MemoryBlockInSection;
-		}
-		if (count && tmp && tmp->Root && tmp->Min) {
-			LdrpModuleBaseAddressIndex = tmp;
-		}
-	}
-
-	return LdrpModuleBaseAddressIndex;
-}
-
 NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY DataTableEntry, IN PVOID BaseAddress) {
-	static auto LdrpModuleBaseAddressIndex = RtlFindLdrpModuleBaseAddressIndex();
+	auto LdrpModuleBaseAddressIndex = MmpGlobalDataPtr->LdrpModuleBaseAddressIndex;
 	if (!LdrpModuleBaseAddressIndex)return STATUS_UNSUCCESSFUL;
 
 	PLDR_DATA_TABLE_ENTRY_WIN8 LdrNode = decltype(LdrNode)((size_t)LdrpModuleBaseAddressIndex - offsetof(LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode));
@@ -61,7 +33,7 @@ NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY Data
 }
 
 NTSTATUS NTAPI RtlRemoveModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY DataTableEntry) {
-	static auto tree{ RtlFindLdrpModuleBaseAddressIndex() };
+	static auto tree{ MmpGlobalDataPtr->LdrpModuleBaseAddressIndex };
 	if (!tree->Root)return STATUS_UNSUCCESSFUL;
 	RtlRbRemoveNode(tree, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
 	return STATUS_SUCCESS;
