@@ -1,6 +1,5 @@
 #include "../MemoryModule/stdafx.h"
 #include <cstdio>
-#pragma warning(disable:4996)
 
 static PVOID ReadDllFile(LPCSTR FileName) {
     LPVOID buffer;
@@ -18,11 +17,14 @@ static PVOID ReadDllFile(LPCSTR FileName) {
     return buffer;
 }
 
-int test() {
+int __stdcall test_user32() {
     HMODULE hModule;
     NTSTATUS status;
-    PVOID buffer = ReadDllFile("a.dll");
+    PVOID buffer = ReadDllFile("C:\\Windows\\System32\\user32.dll");
     if (!buffer) return 0;
+
+    hModule = GetModuleHandleA("user32.dll");
+    if (hModule)return 0;
 
     status = LdrLoadDllMemoryExW(
         &hModule,                               // ModuleHandle
@@ -30,14 +32,13 @@ int test() {
         0,                                      // Flags
         buffer,                                 // Buffer
         0,                                      // Reserved
-        L"a.dll",                               // DllBaseName
-        L"C:\\Windows\\System32\\a.dll"         // DllFullName
+        L"user32.dll",                          // DllBaseName
+        L"C:\\Windows\\System32\\user32.dll"    // DllFullName
     );
     if (NT_SUCCESS(status) && status != STATUS_IMAGE_MACHINE_TYPE_MISMATCH) {
 
-        typedef int(__stdcall* func)();
-        func test_user32 = (func)GetProcAddress(hModule, "test_user32");
-        test_user32();
+        auto _MessageBoxW = (decltype(&MessageBoxW))GetProcAddress(hModule, "MessageBoxW");
+        _MessageBoxW(nullptr, L"Hello, from memory user32!", L"Caption", MB_OK);
 
         //
         // After calling MessageBox, we can't free it.
@@ -45,10 +46,5 @@ int test() {
         //LdrUnloadDllMemory(hModule);
     }
 
-    return 0;
-}
-
-int main() {
-    test();
     return 0;
 }

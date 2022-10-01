@@ -12,7 +12,7 @@ PMMP_GLOBAL_DATA MmpGlobalDataPtr;
 BOOLEAN MmpBuildSectionName(_Out_ PUNICODE_STRING SectionName) {
 	WCHAR buffer[128];
 
-	wsprintfW(buffer, L"\\Sessions\\%d\\BaseNamedObjects\\MMPP%d", NtCurrentPeb()->SessionId, (unsigned int)NtCurrentProcessId());
+	swprintf(buffer, L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%08X", NtCurrentPeb()->SessionId, (unsigned int)NtCurrentProcessId());
 	return RtlCreateUnicodeString(SectionName, buffer);
 }
 
