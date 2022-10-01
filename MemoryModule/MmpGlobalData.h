@@ -24,6 +24,13 @@ typedef struct _MMP_TLS_DATA {
 	CRITICAL_SECTION MmpTlspLock;
 	LIST_ENTRY MmpThreadLocalStoragePointer;
 	DWORD MmpActiveThreadCount;
+
+	struct {
+		decltype(&NtCreateThread) OriginNtCreateThread;
+		decltype(&NtCreateThreadEx) OriginNtCreateThreadEx;
+		decltype(&NtSetInformationProcess) OriginNtSetInformationProcess;
+		decltype(&LdrShutdownThread) OriginLdrShutdownThread;
+	}Hooks;
 }MMP_TLS_DATA, * PMMP_TLS_DATA;
 
 //MmpDotNet.cpp
@@ -35,6 +42,21 @@ typedef struct _MMP_DOT_NET_DATA {
 
 	BOOLEAN PreHooked;
 	BOOLEAN Initialized;
+
+	struct {
+		decltype(&CreateFileW) OriginCreateFileW;
+		decltype(&GetFileInformationByHandle) OriginGetFileInformationByHandle;
+		decltype(&GetFileAttributesExW) OriginGetFileAttributesExW;
+		decltype(&GetFileSize) OriginGetFileSize;
+		decltype(&GetFileSizeEx) OriginGetFileSizeEx;
+		decltype(&CreateFileMappingW) OriginCreateFileMappingW;
+		decltype(&MapViewOfFileEx) OriginMapViewOfFileEx;
+		decltype(&MapViewOfFile) OriginMapViewOfFile;
+		decltype(&UnmapViewOfFile)OriginUnmapViewOfFile;
+		decltype(&CloseHandle)OriginCloseHandle;
+		GetFileVersion_T OriginGetFileVersion1;
+		GetFileVersion_T OriginGetFileVersion2;
+	}Hooks;
 }MMP_DOT_NET_DATA, * PMMP_DOT_NET_DATA;
 
 typedef struct _MMP_GLOBAL_DATA {

@@ -55,11 +55,6 @@ typedef struct _MMP_TLSP_RECORD {
     PVOID* TlspMmpBlock;
 }MMP_TLSP_RECORD, * PMMP_TLSP_RECORD;
 
-decltype(&NtCreateThread) OriginNtCreateThread = NtCreateThread;
-decltype(&NtCreateThreadEx) OriginNtCreateThreadEx = NtCreateThreadEx;
-decltype(&NtSetInformationProcess) OriginNtSetInformationProcess = NtSetInformationProcess;
-decltype(&LdrShutdownThread) OriginLdrShutdownThread = LdrShutdownThread;
-
 typedef struct _THREAD_CONTEXT {
     PTHREAD_START_ROUTINE ThreadStartRoutine;
     LPVOID ThreadParameter;
@@ -262,7 +257,7 @@ NTSTATUS NTAPI HookNtCreateThread(
     Context.Rdx = ULONG64(_Context);
 #endif
 
-    status = OriginNtCreateThread(
+    status = MmpGlobalDataPtr->MmpTls.Hooks.OriginNtCreateThread(
         ThreadHandle,
         DesiredAccess,
         ObjectAttributes,
@@ -299,7 +294,7 @@ NTSTATUS NTAPI HookNtCreateThreadEx(
     Context->ThreadStartRoutine = PTHREAD_START_ROUTINE(StartRoutine);
     Context->ThreadParameter = Argument;
 
-    NTSTATUS status = OriginNtCreateThreadEx(
+    NTSTATUS status = MmpGlobalDataPtr->MmpTls.Hooks.OriginNtCreateThreadEx(
         ThreadHandle,
         DesiredAccess,
         ObjectAttributes,
@@ -382,7 +377,7 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
     //
     // Call the original function
     //
-    OriginLdrShutdownThread();
+    MmpGlobalDataPtr->MmpTls.Hooks.OriginLdrShutdownThread();
 }
 
 BOOL NTAPI PreHookNtSetInformationProcess() {
@@ -463,7 +458,7 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
     _In_ ULONG ProcessInformationLength) {
 
     if (ProcessInformationClass != ProcessTlsInformation) {
-        return OriginNtSetInformationProcess(
+        return MmpGlobalDataPtr->MmpTls.Hooks.OriginNtSetInformationProcess(
             ProcessHandle,
             ProcessInformationClass,
             ProcessInformation,
@@ -537,7 +532,7 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
             }
         }
 
-        status = OriginNtSetInformationProcess(
+        status = MmpGlobalDataPtr->MmpTls.Hooks.OriginNtSetInformationProcess(
             hProcess,
             ProcessInformationClass,
             Tls,
@@ -826,12 +821,18 @@ BOOL NTAPI MmpTlsInitialize() {
     //
     // Hook functions
     //
+
+    MmpGlobalDataPtr->MmpTls.Hooks.OriginNtCreateThread = NtCreateThread;
+    MmpGlobalDataPtr->MmpTls.Hooks.OriginNtCreateThreadEx = NtCreateThreadEx;
+    MmpGlobalDataPtr->MmpTls.Hooks.OriginLdrShutdownThread = LdrShutdownThread;
+    MmpGlobalDataPtr->MmpTls.Hooks.OriginNtSetInformationProcess = NtSetInformationProcess;
+
     DetourTransactionBegin();
     DetourUpdateThread(NtCurrentThread());
-    DetourAttach((PVOID*)&OriginNtCreateThread, HookNtCreateThread);
-    DetourAttach((PVOID*)&OriginNtCreateThreadEx, HookNtCreateThreadEx);
-    DetourAttach((PVOID*)&OriginLdrShutdownThread, HookLdrShutdownThread);
-    DetourAttach((PVOID*)&OriginNtSetInformationProcess, HookNtSetInformationProcess);
+    DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls.Hooks.OriginNtCreateThread, HookNtCreateThread);
+    DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls.Hooks.OriginNtCreateThreadEx, HookNtCreateThreadEx);
+    DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls.Hooks.OriginLdrShutdownThread, HookLdrShutdownThread);
+    DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls.Hooks.OriginNtSetInformationProcess, HookNtSetInformationProcess);
     DetourTransactionCommit();
 
     return TRUE;
