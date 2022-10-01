@@ -19,12 +19,6 @@ PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(PVOID BaseAddress);
 
 PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(PCWSTR BaseName);
 
-extern PLDR_DATA_TABLE_ENTRY const LdrpNtdllBase;
-
-#define RtlFindNtdllLdrEntry()	(LdrpNtdllBase)
-
-
-
 //
 // Loader Data Table Entry Flags
 //

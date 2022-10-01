@@ -1,8 +1,6 @@
 #include "stdafx.h"
 #include <cstddef>
 
-PLDR_DATA_TABLE_ENTRY const LdrpNtdllBase = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
-
 static NTSTATUS NTAPI RtlFreeDependencies(IN PLDR_DATA_TABLE_ENTRY_WIN10 LdrEntry) {
 	_LDR_DDAG_NODE* DependentDdgeNode = nullptr;
 	PLDR_DATA_TABLE_ENTRY_WIN10 ModuleEntry = nullptr;
@@ -254,7 +252,7 @@ NTSTATUS NTAPI RtlGetReferenceCount(IN PMEMORYMODULE pModule, OUT PULONG Count) 
 
 VOID NTAPI RtlInsertMemoryTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	PPEB_LDR_DATA PebData = NtCurrentPeb()->Ldr;
-	PLIST_ENTRY LdrpHashTable = MmpGlobalDataPtr->LdrpHashTable;
+	PLIST_ENTRY LdrpHashTable = MmpGlobalDataPtr->MmpLdrEntry.LdrpHashTable;
 	ULONG i;
 
 	/* Insert into hash table */

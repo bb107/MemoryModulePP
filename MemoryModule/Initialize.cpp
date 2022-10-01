@@ -18,7 +18,7 @@ BOOLEAN MmpBuildSectionName(_Out_ PUNICODE_STRING SectionName) {
 
 PRTL_RB_TREE FindLdrpModuleBaseAddressIndex() {
     PRTL_RB_TREE LdrpModuleBaseAddressIndex = nullptr;
-    PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(MmpGlobalDataPtr->LdrpNtdllBase);
+    PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry);
     PRTL_BALANCED_NODE node = nullptr;
     if (!nt10 || !RtlIsWindowsVersionOrGreater(6, 2, 0))return nullptr;
     node = &nt10->BaseAddressIndexNode;
@@ -253,19 +253,23 @@ NTSTATUS InitializeLockHeld() {
         MmpGlobalDataPtr->MajorVersion = 1;
         MmpGlobalDataPtr->MinorVersion = 0;
 
-        MmpGlobalDataPtr->LdrpNtdllBase = RtlFindNtdllLdrEntry();
-		MmpGlobalDataPtr->LdrpHashTable = FindLdrpHashTable();
+		GetSystemInfo(&MmpGlobalDataPtr->SystemInfo);
 
-        MmpGlobalDataPtr->LdrpModuleBaseAddressIndex = FindLdrpModuleBaseAddressIndex();
+		MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
+        MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex = FindLdrpModuleBaseAddressIndex();
 
-		MmpGlobalDataPtr->LdrpInvertedFunctionTable = FindLdrpInvertedFunctionTable();
+		MmpGlobalDataPtr->MmpLdrEntry.LdrpHashTable = FindLdrpHashTable();
+
+		MmpGlobalDataPtr->MmpInvertedFunctionTable.LdrpInvertedFunctionTable = FindLdrpInvertedFunctionTable();
 
         MmpGlobalDataPtr->MmpFeatures = MEMORY_FEATURE_SUPPORT_VERSION | MEMORY_FEATURE_LDRP_HEAP | MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA | MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
-        if (MmpGlobalDataPtr->LdrpModuleBaseAddressIndex)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_MODULE_BASEADDRESS_INDEX;
-        if (MmpGlobalDataPtr->LdrpHashTable)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_LDRP_HASH_TABLE;
-        if (MmpGlobalDataPtr->LdrpInvertedFunctionTable)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
+        if (MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_MODULE_BASEADDRESS_INDEX;
+        if (MmpGlobalDataPtr->MmpLdrEntry.LdrpHashTable)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_LDRP_HASH_TABLE;
+        if (MmpGlobalDataPtr->MmpInvertedFunctionTable.LdrpInvertedFunctionTable)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
 
 		MmpTlsInitialize();
+
+		MmpGlobalDataPtr->MmpDotNet.Initialized = MmpGlobalDataPtr->MmpDotNet.PreHooked = FALSE;
 
     } while (false);
 

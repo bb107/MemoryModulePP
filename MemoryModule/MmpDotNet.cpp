@@ -28,14 +28,6 @@ static decltype(&CloseHandle)OriginCloseHandle = CloseHandle;
 static GetFileVersion_T OriginGetFileVersion1 = nullptr;
 static GetFileVersion_T OriginGetFileVersion2 = nullptr;
 
-FILETIME AssemblyTimes;
-
-CRITICAL_SECTION MmpFakeHandleListLock;
-LIST_ENTRY MmpFakeHandleListHead;
-
-static BOOLEAN g_PreHooked = FALSE;
-static BOOLEAN g_Initialized = FALSE;
-
 BOOL MmpIsMemoryModuleFileName(
     _In_ LPCWSTR lpFileName,
     _Out_opt_ PLDR_DATA_TABLE_ENTRY *LdrEntry) {
@@ -87,17 +79,17 @@ VOID MmpInsertHandleEntry(
     entry->value = value;
     entry->bImageMapping = bImageMapping;
 
-    EnterCriticalSection(&MmpFakeHandleListLock);
-    InsertTailList(&MmpFakeHandleListHead, &entry->InMmpFakeHandleList);
-    LeaveCriticalSection(&MmpFakeHandleListLock);
+    EnterCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
+    InsertTailList(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListHead, &entry->InMmpFakeHandleList);
+    LeaveCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
 }
 
 PMMP_FAKE_HANDLE_LIST_ENTRY MmpFindHandleEntry(HANDLE hObject) {
 
     PMMP_FAKE_HANDLE_LIST_ENTRY result = nullptr;
-    EnterCriticalSection(&MmpFakeHandleListLock);
+    EnterCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
 
-    for (auto entry = MmpFakeHandleListHead.Flink; entry != &MmpFakeHandleListHead; entry = entry->Flink) {
+    for (auto entry = MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListHead.Flink; entry != &MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListHead; entry = entry->Flink) {
         auto CurEntry = CONTAINING_RECORD(entry, MMP_FAKE_HANDLE_LIST_ENTRY, MMP_FAKE_HANDLE_LIST_ENTRY::InMmpFakeHandleList);
 
         if (CurEntry->hObject == hObject) {
@@ -107,15 +99,15 @@ PMMP_FAKE_HANDLE_LIST_ENTRY MmpFindHandleEntry(HANDLE hObject) {
 
     }
 
-    LeaveCriticalSection(&MmpFakeHandleListLock);
+    LeaveCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
     return result;
 }
 
 VOID MmpFreeHandleEntry(PMMP_FAKE_HANDLE_LIST_ENTRY lpHandleEntry) {
-    EnterCriticalSection(&MmpFakeHandleListLock);
+    EnterCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
     RemoveEntryList(&lpHandleEntry->InMmpFakeHandleList);
     RtlFreeHeap(RtlProcessHeap(), 0, lpHandleEntry);
-    LeaveCriticalSection(&MmpFakeHandleListLock);
+    LeaveCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
 }
 
 HANDLE WINAPI HookCreateFileW(
@@ -156,7 +148,7 @@ BOOL WINAPI HookGetFileInformationByHandle(
         auto entry = (PLDR_DATA_TABLE_ENTRY)iter->value;
         auto module = MapMemoryModuleHandle((HMEMORYMODULE)entry->DllBase);
 
-        lpFileInformation->ftCreationTime = lpFileInformation->ftLastAccessTime = lpFileInformation->ftLastWriteTime = AssemblyTimes;
+        lpFileInformation->ftCreationTime = lpFileInformation->ftLastAccessTime = lpFileInformation->ftLastWriteTime = MmpGlobalDataPtr->MmpDotNet.AssemblyTimes;
         lpFileInformation->nFileSizeLow = module->dwImageFileSize;
 
         return TRUE;
@@ -185,7 +177,7 @@ BOOL WINAPI HookGetFileAttributesExW(
             LPWIN32_FILE_ATTRIBUTE_DATA data = (LPWIN32_FILE_ATTRIBUTE_DATA)lpFileInformation;
             auto module = MapMemoryModuleHandle((HMEMORYMODULE)entry->DllBase);
 
-            data->ftCreationTime = data->ftLastAccessTime = data->ftLastWriteTime = AssemblyTimes;
+            data->ftCreationTime = data->ftLastAccessTime = data->ftLastWriteTime = MmpGlobalDataPtr->MmpDotNet.AssemblyTimes;
             data->nFileSizeLow = module->dwImageFileSize;
             return TRUE;
         }
@@ -394,16 +386,16 @@ BOOL WINAPI MmpPreInitializeHooksForDotNet() {
 
     EnterCriticalSection(NtCurrentPeb()->FastPebLock);
 
-    if (!g_PreHooked) {
+    if (!MmpGlobalDataPtr->MmpDotNet.PreHooked) {
         HMODULE hModule = LoadLibraryW(L"mscoree.dll");
         if (hModule) {
             OriginGetFileVersion2 = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
             if (OriginGetFileVersion2) {
 
-                GetSystemTimeAsFileTime(&AssemblyTimes);
+                GetSystemTimeAsFileTime(&MmpGlobalDataPtr->MmpDotNet.AssemblyTimes);
 
-                InitializeCriticalSection(&MmpFakeHandleListLock);
-                InitializeListHead(&MmpFakeHandleListHead);
+                InitializeCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
+                InitializeListHead(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListHead);
 
                 DetourTransactionBegin();
                 DetourUpdateThread(NtCurrentThread());
@@ -422,14 +414,14 @@ BOOL WINAPI MmpPreInitializeHooksForDotNet() {
 
                 DetourTransactionCommit();
 
-                g_PreHooked = TRUE;
+                MmpGlobalDataPtr->MmpDotNet.PreHooked = TRUE;
             }
         }
     }
 
     LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
 
-    return g_PreHooked;
+    return MmpGlobalDataPtr->MmpDotNet.PreHooked;
 }
 
 BOOL WINAPI MmpInitializeHooksForDotNet() {
@@ -440,17 +432,17 @@ BOOL WINAPI MmpInitializeHooksForDotNet() {
 
             EnterCriticalSection(NtCurrentPeb()->FastPebLock);
 
-            if (!g_PreHooked) {
+            if (!MmpGlobalDataPtr->MmpDotNet.PreHooked) {
                 LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
                 return FALSE;
             }
 
-            if (!g_Initialized) {
+            if (!MmpGlobalDataPtr->MmpDotNet.Initialized) {
                 DetourTransactionBegin();
                 DetourUpdateThread(NtCurrentThread());
                 DetourAttach((PVOID*)&OriginGetFileVersion1, HookGetFileVersion);
                 DetourTransactionCommit();
-                g_Initialized = TRUE;
+                MmpGlobalDataPtr->MmpDotNet.Initialized = TRUE;
             }
 
             LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
