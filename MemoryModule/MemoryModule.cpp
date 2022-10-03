@@ -81,15 +81,11 @@ NTSTATUS MemoryResolveImportTable(
 			}
 
 			if (importDesc && count) {
-				if (!(hMemoryModule->hModulesList = new HMODULE[count])) {
+				hMemoryModule->hModulesList = (HMODULE*)RtlAllocateHeap(NtCurrentPeb()->ProcessHeap, HEAP_ZERO_MEMORY, sizeof(HMODULE) * count);
+				if (!hMemoryModule->hModulesList) {
 					status = STATUS_NO_MEMORY;
 					break;
 				}
-
-				RtlZeroMemory(
-					hMemoryModule->hModulesList,
-					sizeof(HMODULE) * count
-				);
 
 				for (DWORD i = 0; i < count; ++i, ++importDesc) {
 					uintptr_t* thunkRef;
@@ -131,7 +127,7 @@ NTSTATUS MemoryResolveImportTable(
 		for (DWORD i = 0; i < hMemoryModule->dwModulesCount; ++i)
 			FreeLibrary(hMemoryModule->hModulesList[i]);
 
-		delete[]hMemoryModule->hModulesList;
+		RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, hMemoryModule->hModulesList);
 		hMemoryModule->hModulesList = nullptr;
 		hMemoryModule->dwModulesCount = 0;
 	}
@@ -418,7 +414,8 @@ bool MemoryFreeLibrary(HMEMORYMODULE mod) {
 				FreeLibrary(module->hModulesList[i]);
 			}
 		}
-		delete[] module->hModulesList;
+		
+		RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, module->hModulesList);
 	}
 
 	if (module->codeBase) VirtualFree(mod, 0, MEM_RELEASE);

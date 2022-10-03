@@ -3,16 +3,10 @@
 
 PMMP_GLOBAL_DATA MmpGlobalDataPtr;
 
-#ifdef _WIN64
-#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable64
-#else
-#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable32
-#endif
-
 BOOLEAN MmpBuildSectionName(_Out_ PUNICODE_STRING SectionName) {
 	WCHAR buffer[128];
 
-	swprintf(buffer, L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%08X", NtCurrentPeb()->SessionId, (unsigned int)NtCurrentProcessId());
+	swprintf_s(buffer, L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%08X", NtCurrentPeb()->SessionId, (unsigned int)(ULONG_PTR)NtCurrentProcessId());
 	return RtlCreateUnicodeString(SectionName, buffer);
 }
 
@@ -51,6 +45,7 @@ static __forceinline bool IsModuleUnloaded(PLDR_DATA_TABLE_ENTRY entry) {
 	}
 }
 
+#ifndef _WIN64
 PVOID FindLdrpInvertedFunctionTable32() {
 	// _RTL_INVERTED_FUNCTION_TABLE						x86
 	//		Count										+0x0	????????
@@ -103,6 +98,8 @@ PVOID FindLdrpInvertedFunctionTable32() {
 	return nullptr;
 }
 
+#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable32
+#else
 PVOID FindLdrpInvertedFunctionTable64() {
 	// _RTL_INVERTED_FUNCTION_TABLE						x64
 	//		Count										+0x0	????????
@@ -164,6 +161,9 @@ PVOID FindLdrpInvertedFunctionTable64() {
 
 	return nullptr;
 }
+
+#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable64
+#endif
 
 PLIST_ENTRY FindLdrpHashTable() {
 	PLIST_ENTRY list = nullptr;
@@ -254,6 +254,13 @@ NTSTATUS InitializeLockHeld() {
         MmpGlobalDataPtr->MinorVersion = 0;
 
 		GetSystemInfo(&MmpGlobalDataPtr->SystemInfo);
+
+		RtlGetNtVersionNumbers(
+			&MmpGlobalDataPtr->NtVersions.MajorVersion,
+			&MmpGlobalDataPtr->NtVersions.MinorVersion,
+			&MmpGlobalDataPtr->NtVersions.BuildNumber
+		);
+		if (MmpGlobalDataPtr->NtVersions.BuildNumber & 0xf0000000)MmpGlobalDataPtr->NtVersions.BuildNumber &= 0xffff;
 
 		MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
         MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex = FindLdrpModuleBaseAddressIndex();

@@ -66,6 +66,12 @@ typedef struct _MMP_GLOBAL_DATA {
 
 	DWORD MmpFeatures;
 
+	struct {
+		DWORD MajorVersion;
+		DWORD MinorVersion;
+		DWORD BuildNumber;
+	}NtVersions;
+
 	SYSTEM_INFO SystemInfo;
 
 	MMP_BASE_ADDRESS_INDEX_DATA MmpBaseAddressIndex;

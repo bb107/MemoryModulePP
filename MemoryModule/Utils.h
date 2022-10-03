@@ -28,7 +28,12 @@ NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
 
 typedef BOOL(WINAPI* PDLL_STARTUP_ROUTINE)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
 
-bool NTAPI RtlResolveDllNameUnicodeString(IN PCWSTR DllName OPTIONAL, IN PCWSTR DllFullName OPTIONAL, OUT PUNICODE_STRING BaseDllName, OUT PUNICODE_STRING FullDllName);
+NTSTATUS NTAPI RtlResolveDllNameUnicodeString(
+	_In_opt_ PCWSTR DllName,
+	_In_opt_ PCWSTR DllFullName,
+	_Out_ PUNICODE_STRING BaseDllName,
+	_Out_ PUNICODE_STRING FullDllName
+);
 
 BOOL NTAPI LdrpExecuteTLS(PMEMORYMODULE module);
 
@@ -37,11 +42,6 @@ BOOL NTAPI LdrpCallInitializers(PMEMORYMODULE module, DWORD dwReason);
 BOOLEAN NTAPI RtlIsValidImageBuffer(PVOID Buffer, size_t* Size);
 
 FARPROC NTAPI RtlGetNtProcAddress(LPCSTR func_name);
-
-VOID NTAPI RtlGetNtVersionNumbersEx(
-	OUT DWORD* MajorVersion,
-	OUT DWORD* MinorVersion,
-	OUT DWORD* BuildNumber);
 
 BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
 BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
@@ -72,7 +72,7 @@ bool NTAPI RtlIsWindowsVersionInScope(
 );
 
 
-typedef enum _WINDOWS_VERSION {
+typedef enum class _WINDOWS_VERSION {
 	null,
 	xp,
 	vista,
@@ -87,4 +87,6 @@ typedef enum _WINDOWS_VERSION {
 
 WINDOWS_VERSION NTAPI NtWindowsVersion();
 
+#ifndef _WIN64
 int NTAPI RtlCaptureImageExceptionValues(PVOID BaseAddress, PDWORD SEHandlerTable, PDWORD SEHandlerCount);
+#endif

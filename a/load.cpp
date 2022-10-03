@@ -4,7 +4,8 @@
 static PVOID ReadDllFile(LPCSTR FileName) {
     LPVOID buffer;
     size_t size;
-    FILE* f = fopen(FileName, "rb");
+    FILE* f;
+    fopen_s(&f, FileName, "rb");
     if (!f)return 0;
     _fseeki64(f, 0, SEEK_END);
     if (!(size = _ftelli64(f))) {

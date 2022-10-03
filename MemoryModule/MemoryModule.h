@@ -1,5 +1,4 @@
 #pragma once
-#pragma warning(disable:4996)
 
 #ifndef __MEMORY_MODULE_HEADER
 #define __MEMORY_MODULE_HEADER

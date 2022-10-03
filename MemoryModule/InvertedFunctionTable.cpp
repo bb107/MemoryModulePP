@@ -136,7 +136,7 @@ static VOID NTAPI RtlpRemoveInvertedFunctionTable(IN PRTL_INVERTED_FUNCTION_TABL
 	return;
 }
 
-static NTSTATUS NTAPI RtlProtectMrdata(IN SIZE_T Protect) {
+static NTSTATUS NTAPI RtlProtectMrdata(IN ULONG Protect) {
 	static PVOID MrdataBase = nullptr;
 	static SIZE_T size = 0;
 	NTSTATUS status;
@@ -157,7 +157,7 @@ static NTSTATUS NTAPI RtlProtectMrdata(IN SIZE_T Protect) {
 	return NtProtectVirtualMemory(GetCurrentProcess(), &tmp, &tmp_len, Protect, &old);
 }
 
-NTSTATUS NTAPI RtlInsertInvertedFunctionTable(IN PVOID BaseAddress, IN size_t ImageSize) {
+NTSTATUS NTAPI RtlInsertInvertedFunctionTable(IN PVOID BaseAddress, IN ULONG ImageSize) {
 	auto table = PRTL_INVERTED_FUNCTION_TABLE(MmpGlobalDataPtr->MmpInvertedFunctionTable.LdrpInvertedFunctionTable);
 	if (!table)return STATUS_NOT_SUPPORTED;
 	bool need_virtual_protect = RtlIsWindowsVersionOrGreater(6, 3, 0);

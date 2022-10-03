@@ -120,14 +120,14 @@ bool NTAPI RtlInitializeLdrDataTableEntry(
 	}
 
 	switch (NtWindowsVersion()) {
-	case win10:
-	case win10_1:
-	case win10_2: {
+	case WINDOWS_VERSION::win10:
+	case WINDOWS_VERSION::win10_1:
+	case WINDOWS_VERSION::win10_2: {
 		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN10)LdrEntry;
 		entry->ReferenceCount = 1;
 	}
-	case win8:
-	case win8_1: {
+	case WINDOWS_VERSION::win8:
+	case WINDOWS_VERSION::win8_1: {
 		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN8)LdrEntry;
 		const static bool IsWin8 = RtlIsWindowsVersionInScope(6, 2, 0, 6, 3, -1);
 		NtQuerySystemTime(&entry->LoadTime);
@@ -156,14 +156,14 @@ bool NTAPI RtlInitializeLdrDataTableEntry(
 		FlagsProcessed = true;
 	}
 
-	case win7: {
+	case WINDOWS_VERSION::win7: {
 		if (LdrpDataTableEntrySize() == sizeof(LDR_DATA_TABLE_ENTRY_WIN7)) {
 			auto entry = (PLDR_DATA_TABLE_ENTRY_WIN7)LdrEntry;
 			entry->OriginalBase = headers->OptionalHeader.ImageBase;
 			NtQuerySystemTime(&entry->LoadTime);
 		}
 	}
-	case vista: {
+	case WINDOWS_VERSION::vista: {
 		if (LdrpDataTableEntrySize() == sizeof(LDR_DATA_TABLE_ENTRY_VISTA) ||
 			LdrpDataTableEntrySize() == sizeof(LDR_DATA_TABLE_ENTRY_WIN7)) {
 			auto entry = (PLDR_DATA_TABLE_ENTRY_VISTA)LdrEntry;
@@ -172,7 +172,7 @@ bool NTAPI RtlInitializeLdrDataTableEntry(
 			RtlInitializeListEntry(&entry->ServiceTagLinks);
 		}
 	}
-	case xp: {
+	case WINDOWS_VERSION::xp: {
 		LdrEntry->DllBase = BaseAddress;
 		LdrEntry->SizeOfImage = headers->OptionalHeader.SizeOfImage;
 		LdrEntry->TimeDateStamp = headers->FileHeader.TimeDateStamp;
@@ -194,18 +194,18 @@ bool NTAPI RtlInitializeLdrDataTableEntry(
 bool NTAPI RtlFreeLdrDataTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	HANDLE heap = NtCurrentPeb()->ProcessHeap;
 	switch (NtWindowsVersion()) {
-	case win10:
-	case win10_1:
-	case win10_2:
-	case win8:
-	case win8_1: {
+	case WINDOWS_VERSION::win10:
+	case WINDOWS_VERSION::win10_1:
+	case WINDOWS_VERSION::win10_2:
+	case WINDOWS_VERSION::win8:
+	case WINDOWS_VERSION::win8_1: {
 		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN10)LdrEntry;
 		RtlFreeDependencies(entry);
 		RtlFreeHeap(heap, 0, entry->DdagNode);
 		RtlRemoveModuleBaseAddressIndexNode(LdrEntry);
 	}
-	case win7:
-	case vista: {
+	case WINDOWS_VERSION::win7:
+	case WINDOWS_VERSION::vista: {
 		if (LdrpDataTableEntrySize() == sizeof(LDR_DATA_TABLE_ENTRY_VISTA) ||
 			LdrpDataTableEntrySize() == sizeof(LDR_DATA_TABLE_ENTRY_WIN7)) {
 			PLDR_DATA_TABLE_ENTRY_VISTA entry = (decltype(entry))LdrEntry;
@@ -218,7 +218,7 @@ bool NTAPI RtlFreeLdrDataTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 			}
 		}
 	}
-	case xp: {
+	case WINDOWS_VERSION::xp: {
 		RtlFreeHeap(heap, 0, LdrEntry->BaseDllName.Buffer);
 		RtlFreeHeap(heap, 0, LdrEntry->FullDllName.Buffer);
 		RemoveEntryList(&LdrEntry->InLoadOrderLinks);
@@ -266,13 +266,13 @@ VOID NTAPI RtlInsertMemoryTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry) {
 }
 
 VOID NTAPI RtlRbInsertNodeEx(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Parent, IN BOOLEAN Right, OUT PRTL_BALANCED_NODE Node) {
-	decltype(&RtlRbInsertNodeEx)_RtlRbInsertNodeEx = decltype(_RtlRbInsertNodeEx)(RtlGetNtProcAddress("RtlRbInsertNodeEx"));
+	static decltype(&RtlRbInsertNodeEx)_RtlRbInsertNodeEx = decltype(_RtlRbInsertNodeEx)(RtlGetNtProcAddress("RtlRbInsertNodeEx"));
 	if (!_RtlRbInsertNodeEx)return;
 	return _RtlRbInsertNodeEx(Tree, Parent, Right, Node);
 }
 
 VOID NTAPI RtlRbRemoveNode(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Node) {
-	decltype(&RtlRbRemoveNode)_RtlRbRemoveNode = decltype(_RtlRbRemoveNode)(RtlGetNtProcAddress("RtlRbRemoveNode"));
+	static decltype(&RtlRbRemoveNode)_RtlRbRemoveNode = decltype(_RtlRbRemoveNode)(RtlGetNtProcAddress("RtlRbRemoveNode"));
 	if (!_RtlRbRemoveNode)return;
 	return _RtlRbRemoveNode(Tree, Node);
 }
@@ -296,8 +296,8 @@ PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(PCWSTR BaseName) {
 	while (ListEntry != ListHead) {
 		CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 		ListEntry = ListEntry->Flink;
-		if (!wcsnicmp(BaseName, CurEntry->BaseDllName.Buffer, (CurEntry->BaseDllName.Length / sizeof(wchar_t)) - 4) ||
-			!wcsnicmp(BaseName, CurEntry->BaseDllName.Buffer, CurEntry->BaseDllName.Length / sizeof(wchar_t))) {
+		if (!_wcsnicmp(BaseName, CurEntry->BaseDllName.Buffer, (CurEntry->BaseDllName.Length / sizeof(wchar_t)) - 4) ||
+			!_wcsnicmp(BaseName, CurEntry->BaseDllName.Buffer, CurEntry->BaseDllName.Length / sizeof(wchar_t))) {
 			return CurEntry;
 		}
 	}
@@ -322,14 +322,14 @@ size_t NTAPI LdrpDataTableEntrySize() {
 	if (size)return size;
 
 	switch (NtWindowsVersion()) {
-	case xp:return size = sizeof(LDR_DATA_TABLE_ENTRY_XP);
-	case vista:return size = sizeof(LDR_DATA_TABLE_ENTRY_VISTA);
-	case win7:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN7);
-	case win8:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN8);
-	case win8_1:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN8_1);
-	case win10:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN10);
-	case win10_1:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_1);
-	case win10_2:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
+	case WINDOWS_VERSION::xp:return size = sizeof(LDR_DATA_TABLE_ENTRY_XP);
+	case WINDOWS_VERSION::vista:return size = sizeof(LDR_DATA_TABLE_ENTRY_VISTA);
+	case WINDOWS_VERSION::win7:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN7);
+	case WINDOWS_VERSION::win8:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN8);
+	case WINDOWS_VERSION::win8_1:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN8_1);
+	case WINDOWS_VERSION::win10:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN10);
+	case WINDOWS_VERSION::win10_1:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_1);
+	case WINDOWS_VERSION::win10_2:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
 	default:return size = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
 	}
 }
