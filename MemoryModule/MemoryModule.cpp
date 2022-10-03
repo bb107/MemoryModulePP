@@ -51,7 +51,7 @@ PMEMORYMODULE WINAPI MapMemoryModuleHandle(HMEMORYMODULE hModule) {
 	return pModule;
 }
 
-bool WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule) {
+BOOL WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule) {
 	return MapMemoryModuleHandle(hModule) != nullptr;
 }
 
@@ -81,15 +81,11 @@ NTSTATUS MemoryResolveImportTable(
 			}
 
 			if (importDesc && count) {
-				if (!(hMemoryModule->hModulesList = new HMODULE[count])) {
+				hMemoryModule->hModulesList = (HMODULE*)RtlAllocateHeap(NtCurrentPeb()->ProcessHeap, HEAP_ZERO_MEMORY, sizeof(HMODULE) * count);
+				if (!hMemoryModule->hModulesList) {
 					status = STATUS_NO_MEMORY;
 					break;
 				}
-
-				RtlZeroMemory(
-					hMemoryModule->hModulesList,
-					sizeof(HMODULE) * count
-				);
 
 				for (DWORD i = 0; i < count; ++i, ++importDesc) {
 					uintptr_t* thunkRef;
@@ -131,7 +127,7 @@ NTSTATUS MemoryResolveImportTable(
 		for (DWORD i = 0; i < hMemoryModule->dwModulesCount; ++i)
 			FreeLibrary(hMemoryModule->hModulesList[i]);
 
-		delete[]hMemoryModule->hModulesList;
+		RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, hMemoryModule->hModulesList);
 		hMemoryModule->hModulesList = nullptr;
 		hMemoryModule->dwModulesCount = 0;
 	}
@@ -406,21 +402,22 @@ NTSTATUS MemoryLoadLibrary(
 	return status;
 }
 
-bool MemoryFreeLibrary(HMEMORYMODULE mod) {
+BOOL MemoryFreeLibrary(HMEMORYMODULE mod) {
 	PMEMORYMODULE module = MapMemoryModuleHandle(mod);
 	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(mod);
 
-	if (!module) return false;
-	if (module->loadFromNtLoadDllMemory && !module->underUnload)return false;
+	if (!module) return FALSE;
+	if (module->loadFromNtLoadDllMemory && !module->underUnload)return FALSE;
 	if (module->hModulesList) {
 		for (DWORD i = 0; i < module->dwModulesCount; ++i) {
 			if (module->hModulesList[i]) {
 				FreeLibrary(module->hModulesList[i]);
 			}
 		}
-		delete[] module->hModulesList;
+		
+		RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, module->hModulesList);
 	}
 
 	if (module->codeBase) VirtualFree(mod, 0, MEM_RELEASE);
-	return true;
+	return TRUE;
 }

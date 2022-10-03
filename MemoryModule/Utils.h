@@ -21,27 +21,30 @@ typedef struct _SEARCH_CONTEXT {
 }SEARCH_CONTEXT, * PSEARCH_CONTEXT;
 
 NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
-	IN HMODULE hModule	OPTIONAL,
-	IN LPCSTR lpSectionName	OPTIONAL,
-	IN OUT PSEARCH_CONTEXT SearchContext
+	_In_ HMODULE hModule,
+	_In_ LPCSTR lpSectionName,
+	_Inout_ PSEARCH_CONTEXT SearchContext
 );
 
 typedef BOOL(WINAPI* PDLL_STARTUP_ROUTINE)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
 
-bool NTAPI RtlResolveDllNameUnicodeString(IN PCWSTR DllName OPTIONAL, IN PCWSTR DllFullName OPTIONAL, OUT PUNICODE_STRING BaseDllName, OUT PUNICODE_STRING FullDllName);
+NTSTATUS NTAPI RtlResolveDllNameUnicodeString(
+	_In_opt_ PCWSTR DllName,
+	_In_opt_ PCWSTR DllFullName,
+	_Out_ PUNICODE_STRING BaseDllName,
+	_Out_ PUNICODE_STRING FullDllName
+);
 
 BOOL NTAPI LdrpExecuteTLS(PMEMORYMODULE module);
 
 BOOL NTAPI LdrpCallInitializers(PMEMORYMODULE module, DWORD dwReason);
 
-BOOLEAN NTAPI RtlIsValidImageBuffer(PVOID Buffer, size_t* Size);
+BOOLEAN NTAPI RtlIsValidImageBuffer(
+	_In_ PVOID Buffer,
+	_Out_opt_ size_t* Size
+);
 
 FARPROC NTAPI RtlGetNtProcAddress(LPCSTR func_name);
-
-VOID NTAPI RtlGetNtVersionNumbersEx(
-	OUT DWORD* MajorVersion,
-	OUT DWORD* MinorVersion,
-	OUT DWORD* BuildNumber);
 
 BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
 BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
@@ -62,29 +65,29 @@ BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS
 #define RTL_VERIFY_FLAGS_BUILD_NUMBERS	2
 #define RTL_VERIFY_FLAGS_DEFAULT		RTL_VERIFY_FLAGS_MAJOR_VERSION|RTL_VERIFY_FLAGS_MINOR_VERSION|RTL_VERIFY_FLAGS_BUILD_NUMBERS
 
-bool NTAPI RtlVerifyVersion(IN DWORD MajorVersion, IN DWORD MinorVersion OPTIONAL, IN DWORD BuildNumber OPTIONAL, IN BYTE Flags);
-
-bool NTAPI RtlIsWindowsVersionOrGreater(IN DWORD MajorVersion, IN DWORD MinorVersion, IN DWORD BuildNumber);
-
-bool NTAPI RtlIsWindowsVersionInScope(
-	IN DWORD MinMajorVersion, IN DWORD MinMinorVersion, IN DWORD MinBuildNumber,
-	IN DWORD MaxMajorVersion, IN DWORD MaxMinorVersion, IN DWORD MaxBuildNumber
+BOOL NTAPI RtlVerifyVersion(
+	_In_ DWORD MajorVersion,
+	_In_ DWORD MinorVersion,
+	_In_ DWORD BuildNumber,
+	_In_ BYTE Flags
 );
 
+BOOL NTAPI RtlIsWindowsVersionOrGreater(
+	_In_ DWORD MajorVersion,
+	_In_ DWORD MinorVersion,
+	_In_ DWORD BuildNumber
+);
 
-typedef enum _WINDOWS_VERSION {
-	null,
-	xp,
-	vista,
-	win7,
-	win8,
-	win8_1,
-	win10,
-	win10_1,
-	win10_2,
-	invalid
-}WINDOWS_VERSION;
+BOOL NTAPI RtlIsWindowsVersionInScope(
+	_In_ DWORD MinMajorVersion,
+	_In_ DWORD MinMinorVersion,
+	_In_ DWORD MinBuildNumber,
 
-WINDOWS_VERSION NTAPI NtWindowsVersion();
+	_In_ DWORD MaxMajorVersion,
+	_In_ DWORD MaxMinorVersion,
+	_In_ DWORD MaxBuildNumber
+);
 
+#ifndef _WIN64
 int NTAPI RtlCaptureImageExceptionValues(PVOID BaseAddress, PDWORD SEHandlerTable, PDWORD SEHandlerCount);
+#endif

@@ -3,16 +3,10 @@
 
 PMMP_GLOBAL_DATA MmpGlobalDataPtr;
 
-#ifdef _WIN64
-#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable64
-#else
-#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable32
-#endif
-
 BOOLEAN MmpBuildSectionName(_Out_ PUNICODE_STRING SectionName) {
 	WCHAR buffer[128];
 
-	swprintf(buffer, L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%08X", NtCurrentPeb()->SessionId, (unsigned int)NtCurrentProcessId());
+	swprintf_s(buffer, L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%08X", NtCurrentPeb()->SessionId, (unsigned int)(ULONG_PTR)NtCurrentProcessId());
 	return RtlCreateUnicodeString(SectionName, buffer);
 }
 
@@ -51,6 +45,7 @@ static __forceinline bool IsModuleUnloaded(PLDR_DATA_TABLE_ENTRY entry) {
 	}
 }
 
+#ifndef _WIN64
 PVOID FindLdrpInvertedFunctionTable32() {
 	// _RTL_INVERTED_FUNCTION_TABLE						x86
 	//		Count										+0x0	????????
@@ -103,6 +98,8 @@ PVOID FindLdrpInvertedFunctionTable32() {
 	return nullptr;
 }
 
+#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable32
+#else
 PVOID FindLdrpInvertedFunctionTable64() {
 	// _RTL_INVERTED_FUNCTION_TABLE						x64
 	//		Count										+0x0	????????
@@ -165,6 +162,9 @@ PVOID FindLdrpInvertedFunctionTable64() {
 	return nullptr;
 }
 
+#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable64
+#endif
+
 PLIST_ENTRY FindLdrpHashTable() {
 	PLIST_ENTRY list = nullptr;
 	PLIST_ENTRY head = &NtCurrentPeb()->Ldr->InInitializationOrderModuleList, entry = head->Flink;
@@ -181,6 +181,94 @@ PLIST_ENTRY FindLdrpHashTable() {
 		list = nullptr;
 	}
 	return list;
+}
+
+VOID InitializeWindowsVersion() {
+
+	WINDOWS_VERSION version = WINDOWS_VERSION::invalid;
+
+	switch (MmpGlobalDataPtr->NtVersions.MajorVersion) {
+	case 5: {
+		switch (MmpGlobalDataPtr->NtVersions.MinorVersion) {
+		case 1:
+			version = MmpGlobalDataPtr->NtVersions.BuildNumber == 2600 ? WINDOWS_VERSION::xp : WINDOWS_VERSION::invalid;
+			break;
+
+		case 2:
+			version = MmpGlobalDataPtr->NtVersions.BuildNumber == 3790 ? WINDOWS_VERSION::xp : WINDOWS_VERSION::invalid;
+			break;
+		}
+		break;
+	}
+
+	case 6: {
+		switch (MmpGlobalDataPtr->NtVersions.MinorVersion) {
+		case 0: {
+			switch (MmpGlobalDataPtr->NtVersions.BuildNumber) {
+			case 6000:
+			case 6001:
+			case 6002:
+				version = WINDOWS_VERSION::vista;
+				break;
+			}
+			break;
+		}
+
+		case 1: {
+			switch (MmpGlobalDataPtr->NtVersions.BuildNumber) {
+			case 7600:
+			case 7601:
+				version = WINDOWS_VERSION::win7;
+				break;
+			}
+			break;
+		}
+
+		case 2: {
+			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 9200) version = WINDOWS_VERSION::win8;
+			break;
+		}
+
+		case 3: {
+			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 9600) version = WINDOWS_VERSION::win8_1;
+			break;
+		}
+
+		}
+		break;
+	}
+
+	case 10: {
+		if (MmpGlobalDataPtr->NtVersions.MinorVersion)break;
+		switch (MmpGlobalDataPtr->NtVersions.BuildNumber) {
+		case 10240:
+		case 10586: 
+			version = WINDOWS_VERSION::win10;
+			break;
+
+		case 14393: 
+			version = WINDOWS_VERSION::win10_1;
+			break;
+
+		case 15063:
+		case 16299:
+		case 17134:
+		case 17763:
+		case 18362:
+			version = WINDOWS_VERSION::win10_2;
+			break;
+
+		default:
+			if (RtlIsWindowsVersionOrGreater(MmpGlobalDataPtr->NtVersions.MajorVersion, MmpGlobalDataPtr->NtVersions.MinorVersion, 15063)) version = WINDOWS_VERSION::win10_2;
+			break;
+		}
+
+		break;
+	}
+
+	}
+
+	MmpGlobalDataPtr->WindowsVersion = version;
 }
 
 NTSTATUS InitializeLockHeld() {
@@ -254,6 +342,53 @@ NTSTATUS InitializeLockHeld() {
         MmpGlobalDataPtr->MinorVersion = 0;
 
 		GetSystemInfo(&MmpGlobalDataPtr->SystemInfo);
+
+		RtlGetNtVersionNumbers(
+			&MmpGlobalDataPtr->NtVersions.MajorVersion,
+			&MmpGlobalDataPtr->NtVersions.MinorVersion,
+			&MmpGlobalDataPtr->NtVersions.BuildNumber
+		);
+		if (MmpGlobalDataPtr->NtVersions.BuildNumber & 0xf0000000)MmpGlobalDataPtr->NtVersions.BuildNumber &= 0xffff;
+
+		InitializeWindowsVersion();
+
+		switch (MmpGlobalDataPtr->WindowsVersion) {
+		case WINDOWS_VERSION::xp:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_XP);
+			break;
+
+		case WINDOWS_VERSION::vista:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_VISTA);
+			break;
+
+		case WINDOWS_VERSION::win7:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN7);
+			break;
+
+		case WINDOWS_VERSION::win8:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN8);
+			break;
+
+		case WINDOWS_VERSION::win8_1:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN8_1);
+			break;
+
+		case WINDOWS_VERSION::win10:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10);
+			break;
+
+		case WINDOWS_VERSION::win10_1:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_1);
+			break;
+
+		case WINDOWS_VERSION::win10_2:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
+			break;
+
+		default:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
+			break;
+		}
 
 		MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
         MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex = FindLdrpModuleBaseAddressIndex();

@@ -2,68 +2,115 @@
 #include <random>
 #pragma comment(lib,"ntdll.lib")
 
-bool NTAPI RtlResolveDllNameUnicodeString(
-	IN PCWSTR DllName OPTIONAL, IN PCWSTR DllFullName OPTIONAL,
-	OUT PUNICODE_STRING BaseDllName, OUT PUNICODE_STRING FullDllName) {
+NTSTATUS NTAPI RtlResolveDllNameUnicodeString(
+	_In_opt_ PCWSTR DllName,
+	_In_opt_ PCWSTR DllFullName,
+	_Out_ PUNICODE_STRING BaseDllName,
+	_Out_ PUNICODE_STRING FullDllName) {
 
 	std::random_device random;
-	size_t Length = 0;
-	size_t FullLength = 0;
-	PWSTR _DllName = nullptr, _DllFullName = _DllName;
 	HANDLE heap = NtCurrentPeb()->ProcessHeap;
-	bool result = false;
-	if (DllName) {
-		bool add = false;
-		if ((Length = wcslen(DllName)) <= 4 || wcsnicmp(DllName + Length - 4, L".dll", 4)) {
-			add = true;
-			Length += 4;
-		}
-		_DllName = new wchar_t[++Length];
-		wcscpy(_DllName, DllName);
-		if (add)wcscat(_DllName, L".DLL");
-	}
-	else {
-		Length = 16 + 4 + 1; //hex(ULONG64) + ".dll" + '\0'
-		_DllName = new wchar_t[Length];
-		swprintf(_DllName, L"%016llX.DLL", ((ULONG64)random() << 32) | random());
-	}
-	if (DllFullName) {
-		bool add = false;
-		FullLength = wcslen(DllFullName);
-		if (DllName && !wcsstr(DllFullName, DllName) && wcsnicmp(DllFullName + FullLength - 4, L".dll", 4)) {
-			add = true;
-			FullLength += Length;
-		}
-		wcscpy(_DllFullName = new wchar_t[++FullLength], DllFullName);
-		if (add) swprintf(_DllFullName, L"%s\\%s", _DllFullName, _DllName);
-	}
-	else {
-		FullLength = 16 + 1 + Length; //hex(ULONG64) + '\\' + _DllName
-		swprintf(_DllFullName = new wchar_t[FullLength], L"%016llX\\%s", ((ULONG64)random() << 32) | random(), _DllName);
-	}
-	FullLength *= sizeof(wchar_t);
-	Length *= sizeof(wchar_t);
+	NTSTATUS status = STATUS_SUCCESS;
+	size_t length;
 
-	/* Allocate space for full DLL name */
-	if (!(FullDllName->Buffer = (PWSTR)RtlAllocateHeap(heap, HEAP_ZERO_MEMORY, FullLength))) goto end;
-	FullDllName->Length = FullLength - sizeof(wchar_t);
-	FullDllName->MaximumLength = FullLength;
-	wcscpy(FullDllName->Buffer, _DllFullName);
+	RtlZeroMemory(BaseDllName, sizeof(*BaseDllName));
+	RtlZeroMemory(FullDllName, sizeof(*FullDllName));
 
-	/* Construct base DLL name */
-	BaseDllName->Length = Length - sizeof(wchar_t);
-	BaseDllName->MaximumLength = Length;
-	BaseDllName->Buffer = (PWSTR)RtlAllocateHeap(heap, HEAP_ZERO_MEMORY, Length);
-	if (!BaseDllName->Buffer) {
+	do {
+
+		if (DllName && *DllName) {
+			bool extend = false;
+
+			length = wcslen(DllName);
+			if (length <= 4 || _wcsnicmp(DllName + length - 4, L".dll", 4)) {
+				length += 4;
+				extend = true;
+			}
+
+			if (++length >= 0xffff) {
+				status = STATUS_OBJECT_NAME_INVALID;
+				break;
+			}
+
+			BaseDllName->MaximumLength = (USHORT)(length * sizeof(WCHAR));
+			BaseDllName->Length = BaseDllName->MaximumLength - sizeof(WCHAR);
+			BaseDllName->Buffer = (PWSTR)RtlAllocateHeap(heap, 0, BaseDllName->MaximumLength);
+			if (!BaseDllName->Buffer) {
+				status = STATUS_NO_MEMORY;
+				break;
+			}
+
+			swprintf_s(BaseDllName->Buffer, length, extend ? L"%s.dll" : L"%s", DllName);
+		}
+		else {
+			DllName = nullptr;
+
+			BaseDllName->MaximumLength = (16 + 4 + 1) * sizeof(WCHAR); //hex(ULONG64) + ".dll" + '\0'
+			BaseDllName->Length = BaseDllName->MaximumLength - sizeof(WCHAR);
+			BaseDllName->Buffer = (PWSTR)RtlAllocateHeap(heap, 0, BaseDllName->MaximumLength);
+			if (!BaseDllName->Buffer) {
+				status = STATUS_NO_MEMORY;
+				break;
+			}
+
+			swprintf_s(BaseDllName->Buffer, BaseDllName->MaximumLength / sizeof(WCHAR), L"%016llX.DLL", ((ULONG64)random() << 32) | random());
+		}
+
+		if (DllFullName && *DllFullName) {
+			bool extend = false, backslash = false;
+
+			unsigned int wc = BaseDllName->Length / sizeof(WCHAR);
+			length = wcslen(DllFullName);
+			if (length <= wc + 1 || _wcsicmp(DllFullName + length - wc, BaseDllName->Buffer) || *(DllFullName + length - wc - 1) != '\\') {
+				extend = true;
+
+				if (DllFullName[length - 1] != '\\') {
+					backslash = true;
+
+					++length;
+				}
+
+				length += BaseDllName->Length / sizeof(WCHAR);
+			}
+
+			if (++length >= 0xffff) {
+				status = STATUS_OBJECT_NAME_INVALID;
+				break;
+			}
+
+			FullDllName->MaximumLength = (USHORT)(length * sizeof(WCHAR));
+			FullDllName->Length = FullDllName->MaximumLength - sizeof(WCHAR);
+			FullDllName->Buffer = (PWSTR)RtlAllocateHeap(heap, 0, FullDllName->MaximumLength);
+			if (!FullDllName->Buffer) {
+				status = STATUS_NO_MEMORY;
+				break;
+			}
+
+			swprintf_s(FullDllName->Buffer, length, extend ? backslash ? L"%s\\%s" : L"%s%s" : L"%s", DllFullName, BaseDllName->Buffer);
+		}
+		else {
+			FullDllName->MaximumLength = (16 + 1 + 1) * sizeof(WCHAR) + BaseDllName->Length; //hex(ULONG64) + '\\' + BaseDllName + '\0'
+			FullDllName->Length = FullDllName->MaximumLength - sizeof(WCHAR);
+			FullDllName->Buffer = (PWSTR)RtlAllocateHeap(heap, 0, FullDllName->MaximumLength);
+			if (!FullDllName->Buffer) {
+				status = STATUS_NO_MEMORY;
+				break;
+			}
+
+			swprintf_s(FullDllName->Buffer, FullDllName->MaximumLength / sizeof(WCHAR), L"%016llX\\%s", ((ULONG64)random() << 32) | random(), BaseDllName->Buffer);
+		}
+
+	} while (false);
+
+	if (!NT_SUCCESS(status)) {
 		RtlFreeHeap(heap, 0, BaseDllName->Buffer);
-		goto end;
+		RtlFreeHeap(heap, 0, FullDllName->Buffer);
+
+		RtlZeroMemory(BaseDllName, sizeof(*BaseDllName));
+		RtlZeroMemory(FullDllName, sizeof(*FullDllName));
 	}
-	wcscpy(BaseDllName->Buffer, _DllName);
-	result = true;
-end:
-	delete[]_DllName;
-	delete[]_DllFullName;
-	return result;
+
+	return status;
 }
 
 BOOL NTAPI LdrpExecuteTLS(PMEMORYMODULE module) {
@@ -118,9 +165,9 @@ SIZE_T NTAPI _RtlCompareMemory(
 #endif
 
 NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
-	IN HMODULE hModule	OPTIONAL,
-	IN LPCSTR lpSectionName	OPTIONAL,
-	IN OUT PSEARCH_CONTEXT SearchContext) {
+	_In_ HMODULE hModule,
+	_In_ LPCSTR lpSectionName,
+	_Inout_ PSEARCH_CONTEXT SearchContext) {
 
 	NTSTATUS status = STATUS_SUCCESS;
 	size_t begin = 0, buffer = 0;
@@ -142,7 +189,7 @@ NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
 			if (!headers)return STATUS_INVALID_PARAMETER_1;
 			section = IMAGE_FIRST_SECTION(headers);
 			for (WORD i = 0; i < headers->FileHeader.NumberOfSections; ++i) {
-				if (!_stricmp(lpSectionName, (LPCSTR)section->Name)) {
+				if (!_strnicmp(lpSectionName, (LPCSTR)section->Name, 8)) {
 					begin = SearchContext->OutBufferPtr = (size_t)hModule + section->VirtualAddress;
 					Length = SearchContext->RemainingLength = section->Misc.VirtualSize;
 					break;
@@ -256,7 +303,7 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(
 		IMAGE_FIRST_SECTION(headers.nt32);
 		ProbeForRead(Buffer, SizeofImage);
 		if (Size)*Size = SizeofImage;
-		result = CheckSumBufferedFile(Buffer, SizeofImage);
+		result = CheckSumBufferedFile(Buffer, (DWORD)SizeofImage);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		SetLastError(RtlNtStatusToDosError(GetExceptionCode()));
@@ -266,20 +313,6 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(
 
 FARPROC NTAPI RtlGetNtProcAddress(LPCSTR func_name) {
 	return GetProcAddress(GetModuleHandleA("ntdll.dll"), func_name);
-}
-
-VOID NTAPI RtlGetNtVersionNumbersEx(OUT DWORD* MajorVersion, OUT DWORD* MinorVersion, OUT DWORD* BuildNumber) {
-	static DWORD Versions[3]{ 0 };
-
-	if (Versions[0]) goto ret;
-	RtlGetNtVersionNumbers(Versions, Versions + 1, Versions + 2);
-	if (Versions[2] & 0xf0000000)Versions[2] &= 0xffff;
-
-ret:
-	if (MajorVersion)*MajorVersion = Versions[0];
-	if (MinorVersion)*MinorVersion = Versions[1];
-	if (BuildNumber)*BuildNumber = Versions[2];
-	return;
 }
 
 BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS_MASK protect) {
@@ -302,113 +335,44 @@ BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK prote
 	return TRUE;
 }
 
-bool NTAPI RtlVerifyVersion(IN DWORD MajorVersion, IN DWORD MinorVersion OPTIONAL, IN DWORD BuildNumber OPTIONAL, IN BYTE Flags) {
-	DWORD Versions[3];
-	RtlGetNtVersionNumbersEx(Versions, Versions + 1, Versions + 2);
-	if (Versions[0] == MajorVersion &&
-		((Flags & RTL_VERIFY_FLAGS_MINOR_VERSION) ? Versions[1] == MinorVersion : true) &&
-		((Flags & RTL_VERIFY_FLAGS_BUILD_NUMBERS) ? Versions[2] == BuildNumber : true))return true;
-	return false;
+BOOL NTAPI RtlVerifyVersion(
+	_In_ DWORD MajorVersion,
+	_In_ DWORD MinorVersion,
+	_In_ DWORD BuildNumber,
+	_In_ BYTE Flags
+) {
+	if (MmpGlobalDataPtr->NtVersions.MajorVersion == MajorVersion &&
+		((Flags & RTL_VERIFY_FLAGS_MINOR_VERSION) ? MmpGlobalDataPtr->NtVersions.MinorVersion == MinorVersion : true) &&
+		((Flags & RTL_VERIFY_FLAGS_BUILD_NUMBERS) ? MmpGlobalDataPtr->NtVersions.BuildNumber == BuildNumber : true))return TRUE;
+	return FALSE;
 }
 
-bool NTAPI RtlIsWindowsVersionOrGreater(IN DWORD MajorVersion, IN DWORD MinorVersion, IN DWORD BuildNumber) {
-	static DWORD Versions[3]{};
-	if (!Versions[0])RtlGetNtVersionNumbersEx(Versions, Versions + 1, Versions + 2);
-
-	if (Versions[0] == MajorVersion) {
-		if (Versions[1] == MinorVersion) return Versions[2] >= BuildNumber;
-		else return (Versions[1] > MinorVersion);
+BOOL NTAPI RtlIsWindowsVersionOrGreater(
+	_In_ DWORD MajorVersion,
+	_In_ DWORD MinorVersion,
+	_In_ DWORD BuildNumber
+) {
+	if (MmpGlobalDataPtr->NtVersions.MajorVersion == MajorVersion) {
+		if (MmpGlobalDataPtr->NtVersions.MinorVersion == MinorVersion) return MmpGlobalDataPtr->NtVersions.BuildNumber >= BuildNumber;
+		else return (MmpGlobalDataPtr->NtVersions.MinorVersion > MinorVersion);
 	}
-	else return Versions[0] > MajorVersion;
+	else return MmpGlobalDataPtr->NtVersions.MajorVersion > MajorVersion;
 }
 
-bool NTAPI RtlIsWindowsVersionInScope(
-	IN DWORD MinMajorVersion, IN DWORD MinMinorVersion, IN DWORD MinBuildNumber,
-	IN DWORD MaxMajorVersion, IN DWORD MaxMinorVersion, IN DWORD MaxBuildNumber) {
+BOOL NTAPI RtlIsWindowsVersionInScope(
+	_In_ DWORD MinMajorVersion,
+	_In_ DWORD MinMinorVersion,
+	_In_ DWORD MinBuildNumber,
+
+	_In_ DWORD MaxMajorVersion,
+	_In_ DWORD MaxMinorVersion,
+	_In_ DWORD MaxBuildNumber
+) {
 	return RtlIsWindowsVersionOrGreater(MinMajorVersion, MinMinorVersion, MinBuildNumber) &&
 		!RtlIsWindowsVersionOrGreater(MaxMajorVersion, MaxMinorVersion, MaxBuildNumber);
 }
 
-WINDOWS_VERSION NTAPI NtWindowsVersion() {
-	static WINDOWS_VERSION version = null;
-	DWORD versions[3]{};
-	if (version)return version;
-	RtlGetNtVersionNumbersEx(versions, versions + 1, versions + 2);
-
-	switch (versions[0]) {
-	case 5: {
-		switch (versions[1]) {
-		case 1:return version = versions[2] == 2600 ? xp : invalid;
-		case 2:return version = versions[2] == 3790 ? xp : invalid;
-		default:break;
-		}
-		break;
-	}
-		  break;
-	case 6: {
-		switch (versions[1]) {
-		case 0: {
-			switch (versions[2]) {
-			case 6000:
-			case 6001:
-			case 6002:
-				return version = vista;
-			default:
-				break;
-			}
-			break;
-		}
-			  break;
-		case 1: {
-			switch (versions[2]) {
-			case 7600:
-			case 7601:
-				return version = win7;
-			default:
-				break;
-			}
-			break;
-		}
-			  break;
-		case 2: {
-			if (versions[2] == 9200)return version = win8;
-			break;
-		}
-			  break;
-		case 3: {
-			if (versions[2] == 9600)return version = win8_1;
-			break;
-		}
-			  break;
-		default:
-			break;
-		}
-		break;
-	}
-		  break;
-	case 10: {
-		if (versions[1])break;
-		switch (versions[2]) {
-		case 10240:
-		case 10586: return version = win10;
-		case 14393: return version = win10_1;
-		case 15063:
-		case 16299:
-		case 17134:
-		case 17763:
-		case 18362:return version = win10_2;
-		default:if (RtlIsWindowsVersionOrGreater(versions[0], versions[1], 15063))return version = win10_2;
-			break;
-		}
-		break;
-	}
-		   break;
-	default:
-		break;
-	}
-	return version = invalid;
-}
-
+#ifndef _WIN64
 int NTAPI RtlCaptureImageExceptionValues(PVOID BaseAddress, PDWORD SEHandlerTable, PDWORD SEHandlerCount) {
 	PIMAGE_LOAD_CONFIG_DIRECTORY pLoadConfigDirectory;
 	PIMAGE_COR20_HEADER pCor20;
@@ -436,3 +400,4 @@ int NTAPI RtlCaptureImageExceptionValues(PVOID BaseAddress, PDWORD SEHandlerTabl
 	*SEHandlerTable = *SEHandlerCount = ((pCor20 && pCor20->Flags & 1) ? -1 : 0);
 	return 0;
 }
+#endif

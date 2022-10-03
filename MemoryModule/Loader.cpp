@@ -1,8 +1,12 @@
 #include "stdafx.h"
 #include <cstdlib>
 
-static NTSTATUS NTAPI LdrMapDllMemory(IN HMEMORYMODULE ViewBase, IN DWORD dwFlags, IN PCWSTR DllName OPTIONAL,
-	IN PCWSTR lpFullDllName OPTIONAL, OUT PLDR_DATA_TABLE_ENTRY* DataTableEntry OPTIONAL) {
+static NTSTATUS NTAPI LdrMapDllMemory(
+	_In_ HMEMORYMODULE ViewBase,
+	_In_ DWORD dwFlags,
+	_In_opt_ PCWSTR DllName,
+	_In_opt_ PCWSTR lpFullDllName,
+	_Out_opt_ PLDR_DATA_TABLE_ENTRY* DataTableEntry) {
 
 	UNICODE_STRING FullDllName, BaseDllName;
 	PIMAGE_NT_HEADERS NtHeaders;
@@ -13,7 +17,7 @@ static NTSTATUS NTAPI LdrMapDllMemory(IN HMEMORYMODULE ViewBase, IN DWORD dwFlag
 
 	if (!(LdrEntry = RtlAllocateDataTableEntry(ViewBase))) return STATUS_NO_MEMORY;
 
-	if (!RtlResolveDllNameUnicodeString(DllName, lpFullDllName, &BaseDllName, &FullDllName)) {
+	if (!NT_SUCCESS(RtlResolveDllNameUnicodeString(DllName, lpFullDllName, &BaseDllName, &FullDllName))) {
 		RtlFreeHeap(heap, 0, LdrEntry);
 		return STATUS_NO_MEMORY;
 	}
@@ -30,18 +34,21 @@ static NTSTATUS NTAPI LdrMapDllMemory(IN HMEMORYMODULE ViewBase, IN DWORD dwFlag
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS NTAPI LdrLoadDllMemory(OUT HMEMORYMODULE* BaseAddress, IN LPVOID BufferAddress, IN size_t BufferSize) {
-	return LdrLoadDllMemoryExW(BaseAddress, nullptr, LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS, BufferAddress, BufferSize, nullptr, nullptr);
+NTSTATUS NTAPI LdrLoadDllMemory(
+	_Out_ HMEMORYMODULE* BaseAddress,
+	_In_  LPVOID BufferAddress,
+	_In_  size_t Reserved) {
+	return LdrLoadDllMemoryExW(BaseAddress, nullptr, 0, BufferAddress, Reserved, nullptr, nullptr);
 }
 
 NTSTATUS NTAPI LdrLoadDllMemoryExW(
-	OUT HMEMORYMODULE* BaseAddress,
-	OUT PVOID* LdrEntry OPTIONAL,
-	IN DWORD dwFlags,
-	IN LPVOID BufferAddress,
-	IN size_t BufferSize,
-	IN LPCWSTR DllName OPTIONAL,
-	IN LPCWSTR DllFullName OPTIONAL) {
+	_Out_ HMEMORYMODULE* BaseAddress,
+	_Out_opt_ PVOID* LdrEntry,
+	_In_ DWORD dwFlags,
+	_In_ LPVOID BufferAddress,
+	_In_ size_t BufferSize,
+	_In_opt_ LPCWSTR DllName,
+	_In_opt_ LPCWSTR DllFullName) {
 	PMEMORYMODULE module = nullptr;
 	NTSTATUS status = STATUS_SUCCESS;
 	PLDR_DATA_TABLE_ENTRY ModuleEntry = nullptr;
@@ -76,8 +83,8 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 			/* Check if it's being unloaded */
 			if (!CurEntry->InMemoryOrderLinks.Flink) continue;
 			/* Check if name matches */
-			if (!wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, (CurEntry->BaseDllName.Length / sizeof(wchar_t)) - 4) ||
-				!wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, CurEntry->BaseDllName.Length / sizeof(wchar_t))) {
+			if (!_wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, (CurEntry->BaseDllName.Length / sizeof(wchar_t)) - 4) ||
+				!_wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, CurEntry->BaseDllName.Length / sizeof(wchar_t))) {
 				/* Let's compare their headers */
 				if (!(h2 = RtlImageNtHeader(CurEntry->DllBase)))continue;
 				if (!(module = MapMemoryModuleHandle((HMEMORYMODULE)CurEntry->DllBase)))continue;
@@ -94,7 +101,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		}
 	}
 
-	status = MemoryLoadLibrary(BaseAddress, BufferAddress, BufferSize);
+	status = MemoryLoadLibrary(BaseAddress, BufferAddress, (DWORD)BufferSize);
 	if (!NT_SUCCESS(status) || status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)return status;
 
 	if (!(module = MapMemoryModuleHandle(*BaseAddress))) {
@@ -191,33 +198,33 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 }
 
 NTSTATUS NTAPI LdrLoadDllMemoryExA(
-	OUT HMEMORYMODULE* BaseAddress,
-	OUT PVOID* LdrEntry OPTIONAL,
-	IN DWORD dwFlags,
-	IN LPVOID BufferAddress,
-	IN size_t BufferSize,
-	IN LPCSTR DllName OPTIONAL,
-	IN LPCSTR DllFullName OPTIONAL){
+	_Out_ HMEMORYMODULE* BaseAddress,
+	_Out_opt_ PVOID* LdrEntry,
+	_In_ DWORD dwFlags,
+	_In_ LPVOID BufferAddress,
+	_In_ size_t BufferSize,
+	_In_opt_ LPCSTR DllName,
+	_In_opt_ LPCSTR DllFullName) {
 	LPWSTR _DllName = nullptr, _DllFullName = nullptr;
 	size_t size;
 	NTSTATUS status;
 	if (DllName) {
 		size = strlen(DllName) + 1;
 		_DllName = new wchar_t[size];
-		mbstowcs(_DllName, DllName, size);
+		mbstowcs_s(nullptr, _DllName, size, DllName, size);
 	}
 	if (DllFullName) {
 		size = strlen(DllFullName) + 1;
 		_DllFullName = new wchar_t[size];
-		mbstowcs(_DllFullName, DllFullName, size);
+		mbstowcs_s(nullptr, _DllFullName, size, DllFullName, size);
 	}
 	status = LdrLoadDllMemoryExW(BaseAddress, LdrEntry, dwFlags, BufferAddress, BufferSize, _DllName, _DllFullName);
-	if (_DllName)delete[]_DllName;
-	if (_DllFullName)delete[]_DllFullName;
+	delete[]_DllName;
+	delete[]_DllFullName;
 	return status;
 }
 
-NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
+NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress) {
 	__try {
 		ProbeForRead(BaseAddress, sizeof(size_t));
 	}
@@ -280,7 +287,7 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress) {
 }
 
 __declspec(noreturn)
-VOID NTAPI LdrUnloadDllMemoryAndExitThread(IN HMEMORYMODULE BaseAddress, IN DWORD dwExitCode) {
+VOID NTAPI LdrUnloadDllMemoryAndExitThread(_In_ HMEMORYMODULE BaseAddress, _In_ DWORD dwExitCode) {
 	LdrUnloadDllMemory(BaseAddress);
 	RtlExitUserThread(dwExitCode);
 }

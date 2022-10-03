@@ -2,9 +2,9 @@
 
 //Load dll from the provided buffer.
 NTSTATUS NTAPI LdrLoadDllMemory(
-	OUT HMEMORYMODULE* BaseAddress,     // Output module base address
-	IN  LPVOID BufferAddress,           // Pointer to the dll file data buffer
-	IN  size_t Reserved                 // Reserved parameter, must be 0
+	_Out_ HMEMORYMODULE* BaseAddress,     // Output module base address
+	_In_  LPVOID BufferAddress,           // Pointer to the dll file data buffer
+	_In_  size_t Reserved                 // Reserved parameter, must be 0
 );
 
 #define MEMORY_FEATURE_SUPPORT_VERSION				0x00000001
@@ -56,27 +56,27 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(_Out_ PDWORD pFeatures);
 
 
 NTSTATUS NTAPI LdrLoadDllMemoryExW(
-	OUT HMEMORYMODULE* BaseAddress,     // Output module base address
-	OUT PVOID* LdrEntry OPTIONAL,       // Receive a pointer to the LDR node of the module
-	IN DWORD dwFlags,                   // Flags
-	IN LPVOID BufferAddress,            // Pointer to the dll file data buffer
-	IN size_t Reserved,                 // Reserved parameter, must be 0
-	IN LPCWSTR DllName OPTIONAL,        // Module file name
-	IN LPCWSTR DllFullName OPTIONAL     // Module file full path
+	_Out_ HMEMORYMODULE* BaseAddress,		// Output module base address
+	_Out_opt_ PVOID* LdrEntry,				// Receive a pointer to the LDR node of the module
+	_In_ DWORD dwFlags,						// Flags
+	_In_ LPVOID BufferAddress,				// Pointer to the dll file data buffer
+	_In_ size_t Reserved,					// Reserved parameter, must be 0
+	_In_opt_ LPCWSTR DllName,				// Module file name
+	_In_opt_ LPCWSTR DllFullName			// Module file full path
 );
 
 NTSTATUS NTAPI LdrLoadDllMemoryExA(
-	OUT HMEMORYMODULE* BaseAddress,
-	OUT PVOID* LdrEntry OPTIONAL,
-	IN DWORD dwFlags,
-	IN LPVOID BufferAddress,
-	IN size_t Reserved,
-	IN LPCSTR DllName OPTIONAL,
-	IN LPCSTR DllFullName OPTIONAL
+	_Out_ HMEMORYMODULE* BaseAddress,
+	_Out_opt_ PVOID* LdrEntry,
+	_In_ DWORD dwFlags,
+	_In_ LPVOID BufferAddress,
+	_In_ size_t Reserved,
+	_In_opt_ LPCSTR DllName,
+	_In_opt_ LPCSTR DllFullName
 );
 
 //Unload modules previously loaded from memory
-NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress);
+NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress);
 
 #ifndef _USRDLL
 #ifdef _WIN64
@@ -89,5 +89,8 @@ NTSTATUS NTAPI LdrUnloadDllMemory(IN HMEMORYMODULE BaseAddress);
 #endif
 
 extern "C" {
-	__declspec(noreturn) VOID NTAPI LdrUnloadDllMemoryAndExitThread(IN HMEMORYMODULE BaseAddress, IN DWORD dwExitCode);
+	__declspec(noreturn) VOID NTAPI LdrUnloadDllMemoryAndExitThread(
+		_In_ HMEMORYMODULE BaseAddress,
+		_In_ DWORD dwExitCode
+	);
 }

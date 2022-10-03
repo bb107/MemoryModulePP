@@ -3,21 +3,33 @@
 #define FLAG_REFERENCE		0
 #define FLAG_DEREFERENCE	1
 
-PLDR_DATA_TABLE_ENTRY NTAPI RtlAllocateDataTableEntry(IN PVOID BaseAddress);
+PLDR_DATA_TABLE_ENTRY NTAPI RtlAllocateDataTableEntry(_In_ PVOID BaseAddress);
 
-bool NTAPI RtlInitializeLdrDataTableEntry(OUT PLDR_DATA_TABLE_ENTRY LdrEntry, IN DWORD dwFlags, IN PVOID BaseAddress, IN UNICODE_STRING& DllBaseName, IN UNICODE_STRING& DllFullName);
+BOOL NTAPI RtlInitializeLdrDataTableEntry(
+	_Out_ PLDR_DATA_TABLE_ENTRY LdrEntry,
+	_In_ DWORD dwFlags,
+	_In_ PVOID BaseAddress,
+	_In_ UNICODE_STRING& DllBaseName,
+	_In_ UNICODE_STRING& DllFullName
+);
 
-bool NTAPI RtlFreeLdrDataTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry);
+BOOL NTAPI RtlFreeLdrDataTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry);
 
-NTSTATUS NTAPI RtlUpdateReferenceCount(IN OUT PMEMORYMODULE pModule, IN DWORD Flags);
+NTSTATUS NTAPI RtlUpdateReferenceCount(
+	_Inout_ PMEMORYMODULE pModule,
+	_In_ DWORD Flags
+);
 
-NTSTATUS NTAPI RtlGetReferenceCount(IN PMEMORYMODULE pModule, OUT PULONG Count);
+NTSTATUS NTAPI RtlGetReferenceCount(
+	_In_ PMEMORYMODULE pModule,
+	_Out_ PULONG Count
+);
 
-VOID NTAPI RtlInsertMemoryTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry);
+VOID NTAPI RtlInsertMemoryTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry);
 
-PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(PVOID BaseAddress);
+PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(_In_ PVOID BaseAddress);
 
-PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(PCWSTR BaseName);
+PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(_In_z_ PCWSTR BaseName);
 
 //
 // Loader Data Table Entry Flags
@@ -50,10 +62,17 @@ PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(PCWSTR BaseName);
 #define LDR_GET_HASH_ENTRY(x)		(RtlUpcaseUnicodeChar((x)) & (LDR_HASH_TABLE_ENTRIES - 1))
 #define LDR_HASH_TABLE_ENTRIES		32
 
-// RtlRbInsertNodeEx
-VOID NTAPI RtlRbInsertNodeEx(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Parent, IN BOOLEAN Right, OUT PRTL_BALANCED_NODE Node);
-// RtlRbRemoveNode
-VOID NTAPI RtlRbRemoveNode(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Node);
+VOID NTAPI RtlRbInsertNodeEx(
+	_In_ PRTL_RB_TREE Tree,
+	_In_ PRTL_BALANCED_NODE Parent,
+	_In_ BOOLEAN Right,
+	_Out_ PRTL_BALANCED_NODE Node
+);
+
+VOID NTAPI RtlRbRemoveNode(
+	_In_ PRTL_RB_TREE Tree,
+	_In_ PRTL_BALANCED_NODE Node
+);
 
 struct _LDR_DDAG_NODE_WIN8 {
 	_LIST_ENTRY Modules;							                        //0x0
@@ -326,9 +345,4 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_2 {
 	UCHAR SigningLevel;                                                     //0x11c
 }LDR_DATA_TABLE_ENTRY_WIN10_2, * PLDR_DATA_TABLE_ENTRY_WIN10_2;
 
-ULONG NTAPI LdrHashEntry(IN UNICODE_STRING& str, IN bool _xor = true);
-
-#define RtlInitializeListEntry(entry) ((entry)->Blink = (entry)->Flink = (entry))
-#define RtlInitializeSingleEntry(entry) ((entry->Next = (entry)))
-
-size_t NTAPI LdrpDataTableEntrySize();
+ULONG NTAPI LdrHashEntry(_In_ UNICODE_STRING& str, _In_ BOOL _xor = TRUE);

@@ -59,12 +59,35 @@ typedef struct _MMP_DOT_NET_DATA {
 	}Hooks;
 }MMP_DOT_NET_DATA, * PMMP_DOT_NET_DATA;
 
+typedef enum class _WINDOWS_VERSION :BYTE {
+	null,
+	xp,
+	vista,
+	win7,
+	win8,
+	win8_1,
+	win10,
+	win10_1,
+	win10_2,
+	invalid
+}WINDOWS_VERSION;
+
 typedef struct _MMP_GLOBAL_DATA {
 
 	WORD MajorVersion;
 	WORD MinorVersion;
 
 	DWORD MmpFeatures;
+
+	struct {
+		DWORD MajorVersion;
+		DWORD MinorVersion;
+		DWORD BuildNumber;
+	}NtVersions;
+
+	WINDOWS_VERSION WindowsVersion;
+
+	WORD LdrDataTableEntrySize;
 
 	SYSTEM_INFO SystemInfo;
 

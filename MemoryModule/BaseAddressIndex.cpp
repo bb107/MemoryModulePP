@@ -1,6 +1,8 @@
 #include "stdafx.h"
 
-NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY DataTableEntry, IN PVOID BaseAddress) {
+NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(
+	_In_ PLDR_DATA_TABLE_ENTRY DataTableEntry,
+	_In_ PVOID BaseAddress) {
 	auto LdrpModuleBaseAddressIndex = MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex;
 	if (!LdrpModuleBaseAddressIndex)return STATUS_UNSUCCESSFUL;
 
@@ -32,7 +34,7 @@ NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY Data
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS NTAPI RtlRemoveModuleBaseAddressIndexNode(IN PLDR_DATA_TABLE_ENTRY DataTableEntry) {
+NTSTATUS NTAPI RtlRemoveModuleBaseAddressIndexNode(_In_ PLDR_DATA_TABLE_ENTRY DataTableEntry) {
 	static auto tree{ MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex };
 	if (!tree->Root)return STATUS_UNSUCCESSFUL;
 	RtlRbRemoveNode(tree, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);

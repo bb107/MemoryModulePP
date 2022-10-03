@@ -513,7 +513,7 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
             }
 
             Tls->OperationType = ProcessTlsReplaceIndex;
-            for (auto i = 0; i < Tls->ThreadDataCount; ++i) {
+            for (ULONG i = 0; i < Tls->ThreadDataCount; ++i) {
                 Tls->ThreadData[i].TlsModulePointer = Tls->ThreadData[i].TlsVector[ProcessTlsInformation->TlsVectorLength];
             }
         }
@@ -543,7 +543,7 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
         // Modify our mapping
         //
         EnterCriticalSection(&MmpGlobalDataPtr->MmpTls.MmpTlspLock);
-        for (auto i = 0; i < Tls->ThreadDataCount; ++i) {
+        for (ULONG i = 0; i < Tls->ThreadDataCount; ++i) {
 
             bool found = false;
             PLIST_ENTRY entry = MmpGlobalDataPtr->MmpTls.MmpThreadLocalStoragePointer.Flink;
@@ -769,7 +769,7 @@ NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
         nullptr,                        // hack
         PROCESSINFOCLASS::ProcessTlsInformation,
         ProcessTlsInformation,
-        Length
+        (ULONG)Length
     );
 
     for (DWORD i = 0; i < ProcessTlsInformation->ThreadDataCount; ++i) {

@@ -1,11 +1,11 @@
 #include "../MemoryModule/stdafx.h"
 #include <cstdio>
-#pragma warning(disable:4996)
 
 static PVOID ReadDllFile(LPCSTR FileName) {
     LPVOID buffer;
     size_t size;
-    FILE* f = fopen(FileName, "rb");
+    FILE* f;
+    fopen_s(&f, FileName, "rb");
     if (!f)return 0;
     _fseeki64(f, 0, SEEK_END);
     if (!(size = _ftelli64(f))) {
@@ -30,8 +30,8 @@ int test() {
         0,                                      // Flags
         buffer,                                 // Buffer
         0,                                      // Reserved
-        L"a.dll",                               // DllBaseName
-        L"C:\\Windows\\System32\\a.dll"         // DllFullName
+        nullptr,                               // DllBaseName
+        nullptr         // DllFullName
     );
     if (NT_SUCCESS(status) && status != STATUS_IMAGE_MACHINE_TYPE_MISMATCH) {
 
