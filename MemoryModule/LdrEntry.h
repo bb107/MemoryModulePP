@@ -3,27 +3,33 @@
 #define FLAG_REFERENCE		0
 #define FLAG_DEREFERENCE	1
 
-PLDR_DATA_TABLE_ENTRY NTAPI RtlAllocateDataTableEntry(IN PVOID BaseAddress);
+PLDR_DATA_TABLE_ENTRY NTAPI RtlAllocateDataTableEntry(_In_ PVOID BaseAddress);
 
-bool NTAPI RtlInitializeLdrDataTableEntry(OUT PLDR_DATA_TABLE_ENTRY LdrEntry, IN DWORD dwFlags, IN PVOID BaseAddress, IN UNICODE_STRING& DllBaseName, IN UNICODE_STRING& DllFullName);
+BOOL NTAPI RtlInitializeLdrDataTableEntry(
+	_Out_ PLDR_DATA_TABLE_ENTRY LdrEntry,
+	_In_ DWORD dwFlags,
+	_In_ PVOID BaseAddress,
+	_In_ UNICODE_STRING& DllBaseName,
+	_In_ UNICODE_STRING& DllFullName
+);
 
-bool NTAPI RtlFreeLdrDataTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry);
+BOOL NTAPI RtlFreeLdrDataTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry);
 
-NTSTATUS NTAPI RtlUpdateReferenceCount(IN OUT PMEMORYMODULE pModule, IN DWORD Flags);
+NTSTATUS NTAPI RtlUpdateReferenceCount(
+	_Inout_ PMEMORYMODULE pModule,
+	_In_ DWORD Flags
+);
 
-NTSTATUS NTAPI RtlGetReferenceCount(IN PMEMORYMODULE pModule, OUT PULONG Count);
+NTSTATUS NTAPI RtlGetReferenceCount(
+	_In_ PMEMORYMODULE pModule,
+	_Out_ PULONG Count
+);
 
-VOID NTAPI RtlInsertMemoryTableEntry(IN PLDR_DATA_TABLE_ENTRY LdrEntry);
+VOID NTAPI RtlInsertMemoryTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry);
 
-PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(PVOID BaseAddress);
+PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(_In_ PVOID BaseAddress);
 
-PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(PCWSTR BaseName);
-
-extern PLDR_DATA_TABLE_ENTRY const LdrpNtdllBase;
-
-#define RtlFindNtdllLdrEntry()	(LdrpNtdllBase)
-
-
+PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(_In_z_ PCWSTR BaseName);
 
 //
 // Loader Data Table Entry Flags
@@ -56,10 +62,17 @@ extern PLDR_DATA_TABLE_ENTRY const LdrpNtdllBase;
 #define LDR_GET_HASH_ENTRY(x)		(RtlUpcaseUnicodeChar((x)) & (LDR_HASH_TABLE_ENTRIES - 1))
 #define LDR_HASH_TABLE_ENTRIES		32
 
-// RtlRbInsertNodeEx
-VOID NTAPI RtlRbInsertNodeEx(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Parent, IN BOOLEAN Right, OUT PRTL_BALANCED_NODE Node);
-// RtlRbRemoveNode
-VOID NTAPI RtlRbRemoveNode(IN PRTL_RB_TREE Tree, IN PRTL_BALANCED_NODE Node);
+VOID NTAPI RtlRbInsertNodeEx(
+	_In_ PRTL_RB_TREE Tree,
+	_In_ PRTL_BALANCED_NODE Parent,
+	_In_ BOOLEAN Right,
+	_Out_ PRTL_BALANCED_NODE Node
+);
+
+VOID NTAPI RtlRbRemoveNode(
+	_In_ PRTL_RB_TREE Tree,
+	_In_ PRTL_BALANCED_NODE Node
+);
 
 struct _LDR_DDAG_NODE_WIN8 {
 	_LIST_ENTRY Modules;							                        //0x0
@@ -186,9 +199,9 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN8 {
 }LDR_DATA_TABLE_ENTRY_WIN8, * PLDR_DATA_TABLE_ENTRY_WIN8;
 
 //6.3.9600	Windows 8.1 | 2012R2 RTM | 2012R2 Update 1
-typedef struct _LDR_DATA_TABLE_ENTRY_WIN8_1 :public _LDR_DATA_TABLE_ENTRY_WIN8 {
+typedef struct _LDR_DATA_TABLE_ENTRY_WINBLUE :public _LDR_DATA_TABLE_ENTRY_WIN8 {
 	ULONG ImplicitPathOptions;
-}LDR_DATA_TABLE_ENTRY_WIN8_1, * PLDR_DATA_TABLE_ENTRY_WIN8_1;
+}LDR_DATA_TABLE_ENTRY_WINBLUE, * PLDR_DATA_TABLE_ENTRY_WINBLUE;
 
 //10.0.10240	Windows 10 | 2016 1507 Threshold 1
 //10.0.10586	Windows 10 | 2016 1511 Threshold 2
@@ -267,76 +280,18 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_1 :public _LDR_DATA_TABLE_ENTRY_WIN10
 //10.0.18362	Windows 10 | 2016 1903 19H1 (May 2019 Update) | 2016 1909 19H2 (November 2019 Update)
 //10.0.19041	Windows 10 | 2016 2004 20H1 (May 2020 Update)
 //10.0.19042	Windows 10 | 2016 2009 20H2 (October 2020 Update)
-typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_2 {
-	_LIST_ENTRY InLoadOrderLinks;											//0x0
-	_LIST_ENTRY InMemoryOrderLinks;											//0x10
-	_LIST_ENTRY InInitializationOrderLinks;									//0x20
-	VOID* DllBase;                                                          //0x30
-	VOID* EntryPoint;                                                       //0x38
-	ULONG SizeOfImage;                                                      //0x40
-	_UNICODE_STRING FullDllName;											//0x48
-	_UNICODE_STRING BaseDllName;											//0x58
-	union {
-		UCHAR FlagGroup[4];                                                 //0x68
-		ULONG Flags;                                                        //0x68
-		struct {
-			ULONG PackagedBinary : 1;                                         //0x68
-			ULONG MarkedForRemoval : 1;                                       //0x68
-			ULONG ImageDll : 1;                                               //0x68
-			ULONG LoadNotificationsSent : 1;                                  //0x68
-			ULONG TelemetryEntryProcessed : 1;                                //0x68
-			ULONG ProcessStaticImport : 1;                                    //0x68
-			ULONG InLegacyLists : 1;                                          //0x68
-			ULONG InIndexes : 1;                                              //0x68
-			ULONG ShimDll : 1;                                                //0x68
-			ULONG InExceptionTable : 1;                                       //0x68
-			ULONG ReservedFlags1 : 2;                                         //0x68
-			ULONG LoadInProgress : 1;                                         //0x68
-			ULONG LoadConfigProcessed : 1;                                    //0x68
-			ULONG EntryProcessed : 1;                                         //0x68
-			ULONG ProtectDelayLoad : 1;                                       //0x68
-			ULONG ReservedFlags3 : 2;                                         //0x68
-			ULONG DontCallForThreads : 1;                                     //0x68
-			ULONG ProcessAttachCalled : 1;                                    //0x68
-			ULONG ProcessAttachFailed : 1;                                    //0x68
-			ULONG CorDeferredValidate : 1;                                    //0x68
-			ULONG CorImage : 1;                                               //0x68
-			ULONG DontRelocate : 1;                                           //0x68
-			ULONG CorILOnly : 1;                                              //0x68
-			ULONG ReservedFlags5 : 3;                                         //0x68
-			ULONG Redirected : 1;                                             //0x68
-			ULONG ReservedFlags6 : 2;                                         //0x68
-			ULONG CompatDatabaseProcessed : 1;                                //0x68
-		};
-	};
-	USHORT ObsoleteLoadCount;                                               //0x6c
-	USHORT TlsIndex;                                                        //0x6e
-	_LIST_ENTRY HashLinks;												    //0x70
-	ULONG TimeDateStamp;                                                    //0x80
-	_ACTIVATION_CONTEXT* EntryPointActivationContext;			            //0x88
-	VOID* Lock;                                                             //0x90
-	_LDR_DDAG_NODE* DdagNode;											    //0x98
-	_LIST_ENTRY NodeModuleLink;				                                //0xa0
-	VOID* LoadContext;						                                //0xb0
-	VOID* ParentDllBase;                                                    //0xb8
-	VOID* SwitchBackContext;                                                //0xc0
-	_RTL_BALANCED_NODE BaseAddressIndexNode;								//0xc8
-	_RTL_BALANCED_NODE MappingInfoIndexNode;								//0xe0
-	ULONGLONG OriginalBase;                                                 //0xf8
-	_LARGE_INTEGER LoadTime;												//0x100
-	ULONG BaseNameHashValue;                                                //0x108
-	_LDR_DLL_LOAD_REASON LoadReason;										//0x10c
-	ULONG ImplicitPathOptions;                                              //0x110
-	ULONG ReferenceCount;                                                   //0x114
+typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_2 :LDR_DATA_TABLE_ENTRY_WIN10 {
 	ULONG DependentLoadFlags;                                               //0x118
 	UCHAR SigningLevel;                                                     //0x11c
 }LDR_DATA_TABLE_ENTRY_WIN10_2, * PLDR_DATA_TABLE_ENTRY_WIN10_2;
 
-ULONG NTAPI LdrHashEntry(IN UNICODE_STRING& str, IN bool _xor = true);
+//10.0.22000	Windows 11 Insider Preview (Jun 2021)
+//10.0.22000	Windows 11 21H2 (RTM)
+//10.0.22621	Windows 11 22H2 (2022 Update)
+typedef struct _LDR_DATA_TABLE_ENTRY_WIN11 :LDR_DATA_TABLE_ENTRY_WIN10_2 {
+	ULONG CheckSum;                                                         //0x120
+	VOID* ActivePatchImageBase;                                             //0x128
+	LDR_HOT_PATCH_STATE HotPatchState;                                      //0x130
+}LDR_DATA_TABLE_ENTRY_WIN11, * PLDR_DATA_TABLE_ENTRY_WIN11;
 
-PLIST_ENTRY NTAPI RtlFindLdrpHashTable();
-
-#define RtlInitializeListEntry(entry) ((entry)->Blink = (entry)->Flink = (entry))
-#define RtlInitializeSingleEntry(entry) ((entry->Next = (entry)))
-
-size_t NTAPI LdrpDataTableEntrySize();
+ULONG NTAPI LdrHashEntry(_In_ UNICODE_STRING& DllBaseName, _In_ BOOL ToIndex = TRUE);

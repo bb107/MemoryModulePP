@@ -1,5 +1,4 @@
 #pragma once
-#pragma warning(disable:4996)
 
 #ifndef __MEMORY_MODULE_HEADER
 #define __MEMORY_MODULE_HEADER
@@ -81,9 +80,9 @@ extern "C" {
 		_In_ PIMAGE_NT_HEADERS lpNtHeaders
 	);
 
-    bool MemoryFreeLibrary(HMEMORYMODULE);
+    BOOL MemoryFreeLibrary(HMEMORYMODULE);
 
-	bool WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule);
+	BOOL WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule);
 
 	PMEMORYMODULE WINAPI MapMemoryModuleHandle(HMEMORYMODULE hModule);
 

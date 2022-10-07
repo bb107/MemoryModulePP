@@ -172,6 +172,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="load.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
@@ -182,6 +183,11 @@
   <ItemGroup>
     <None Include="binary1.bin" />
     <None Include="m.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MemoryModule\MemoryModule.vcxproj">
+      <Project>{5b1f46db-036e-4a50-af5f-f5d6584d42c6}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -18,11 +18,14 @@ static PVOID ReadDllFile(LPCSTR FileName) {
     return buffer;
 }
 
-int test() {
+int __stdcall test_user32() {
     HMODULE hModule;
     NTSTATUS status;
-    PVOID buffer = ReadDllFile("a.dll");
+    PVOID buffer = ReadDllFile("C:\\Windows\\System32\\user32.dll");
     if (!buffer) return 0;
+
+    hModule = GetModuleHandleA("user32.dll");
+    if (hModule)return 0;
 
     status = LdrLoadDllMemoryExW(
         &hModule,                               // ModuleHandle
@@ -30,40 +33,18 @@ int test() {
         0,                                      // Flags
         buffer,                                 // Buffer
         0,                                      // Reserved
-        nullptr,                               // DllBaseName
-        nullptr         // DllFullName
+        L"user32.dll",                          // DllBaseName
+        L"C:\\Windows\\System32\\user32.dll"    // DllFullName
     );
     if (NT_SUCCESS(status) && status != STATUS_IMAGE_MACHINE_TYPE_MISMATCH) {
 
-        typedef int(__stdcall* func)();
-        func test_user32 = (func)GetProcAddress(hModule, "test_user32");
-        test_user32();
+        auto _MessageBoxW = (decltype(&MessageBoxW))GetProcAddress(hModule, "MessageBoxW");
+        _MessageBoxW(nullptr, L"Hello, from memory user32!", L"Caption", MB_OK);
 
         //
         // After calling MessageBox, we can't free it.
         // 
         //LdrUnloadDllMemory(hModule);
-    }
-
-    return 0;
-}
-
-int main() {
-    if (MmpGlobalDataPtr->WindowsVersion == WINDOWS_VERSION::win11) {
-        auto head = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
-        auto entry = head->Flink;
-        while (entry != head) {
-            PLDR_DATA_TABLE_ENTRY_WIN11 __entry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY_WIN11, InLoadOrderLinks);
-            wprintf(L"%s\t0x%08X, 0x%08X, 0x%p, %d\n",
-                __entry->BaseDllName.Buffer,
-                __entry->CheckSum,
-                RtlImageNtHeader(__entry->DllBase)->OptionalHeader.CheckSum,
-                __entry->ActivePatchImageBase,
-                __entry->HotPatchState
-            );
-
-            entry = entry->Flink;
-        }
     }
 
     return 0;

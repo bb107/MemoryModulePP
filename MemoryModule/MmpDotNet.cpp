@@ -1,40 +1,12 @@
 #include "stdafx.h"
 #include <3rdparty/Detours/detours.h>
 
-typedef HRESULT (WINAPI* GetFileVersion_T)(
-    LPCWSTR szFilename,
-    LPWSTR szBuffer,
-    DWORD cchBuffer,
-    DWORD* dwLength
-);
-
 typedef struct _MMP_FAKE_HANDLE_LIST_ENTRY {
     LIST_ENTRY InMmpFakeHandleList;
     HANDLE hObject;
     PVOID value;
     BOOL bImageMapping;
 }MMP_FAKE_HANDLE_LIST_ENTRY, * PMMP_FAKE_HANDLE_LIST_ENTRY;
-
-static decltype(&CreateFileW) OriginCreateFileW = CreateFileW;
-static decltype(&GetFileInformationByHandle) OriginGetFileInformationByHandle = GetFileInformationByHandle;
-static decltype(&GetFileAttributesExW) OriginGetFileAttributesExW = GetFileAttributesExW;
-static decltype(&GetFileSize) OriginGetFileSize = GetFileSize;
-static decltype(&GetFileSizeEx) OriginGetFileSizeEx = GetFileSizeEx;
-static decltype(&CreateFileMappingW) OriginCreateFileMappingW = CreateFileMappingW;
-static decltype(&MapViewOfFileEx) OriginMapViewOfFileEx = MapViewOfFileEx;
-static decltype(&MapViewOfFile) OriginMapViewOfFile = MapViewOfFile;
-static decltype(&UnmapViewOfFile)OriginUnmapViewOfFile = UnmapViewOfFile;
-static decltype(&CloseHandle)OriginCloseHandle = CloseHandle;
-static GetFileVersion_T OriginGetFileVersion1 = nullptr;
-static GetFileVersion_T OriginGetFileVersion2 = nullptr;
-
-FILETIME AssemblyTimes;
-
-CRITICAL_SECTION MmpFakeHandleListLock;
-LIST_ENTRY MmpFakeHandleListHead;
-
-static BOOLEAN g_PreHooked = FALSE;
-static BOOLEAN g_Initialized = FALSE;
 
 BOOL MmpIsMemoryModuleFileName(
     _In_ LPCWSTR lpFileName,
@@ -87,17 +59,17 @@ VOID MmpInsertHandleEntry(
     entry->value = value;
     entry->bImageMapping = bImageMapping;
 
-    EnterCriticalSection(&MmpFakeHandleListLock);
-    InsertTailList(&MmpFakeHandleListHead, &entry->InMmpFakeHandleList);
-    LeaveCriticalSection(&MmpFakeHandleListLock);
+    EnterCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
+    InsertTailList(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListHead, &entry->InMmpFakeHandleList);
+    LeaveCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
 }
 
 PMMP_FAKE_HANDLE_LIST_ENTRY MmpFindHandleEntry(HANDLE hObject) {
 
     PMMP_FAKE_HANDLE_LIST_ENTRY result = nullptr;
-    EnterCriticalSection(&MmpFakeHandleListLock);
+    EnterCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
 
-    for (auto entry = MmpFakeHandleListHead.Flink; entry != &MmpFakeHandleListHead; entry = entry->Flink) {
+    for (auto entry = MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListHead.Flink; entry != &MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListHead; entry = entry->Flink) {
         auto CurEntry = CONTAINING_RECORD(entry, MMP_FAKE_HANDLE_LIST_ENTRY, MMP_FAKE_HANDLE_LIST_ENTRY::InMmpFakeHandleList);
 
         if (CurEntry->hObject == hObject) {
@@ -107,15 +79,15 @@ PMMP_FAKE_HANDLE_LIST_ENTRY MmpFindHandleEntry(HANDLE hObject) {
 
     }
 
-    LeaveCriticalSection(&MmpFakeHandleListLock);
+    LeaveCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
     return result;
 }
 
 VOID MmpFreeHandleEntry(PMMP_FAKE_HANDLE_LIST_ENTRY lpHandleEntry) {
-    EnterCriticalSection(&MmpFakeHandleListLock);
+    EnterCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
     RemoveEntryList(&lpHandleEntry->InMmpFakeHandleList);
     RtlFreeHeap(RtlProcessHeap(), 0, lpHandleEntry);
-    LeaveCriticalSection(&MmpFakeHandleListLock);
+    LeaveCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
 }
 
 HANDLE WINAPI HookCreateFileW(
@@ -135,7 +107,7 @@ HANDLE WINAPI HookCreateFileW(
         return hEvent;
     }
 
-    return OriginCreateFileW(
+    return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCreateFileW(
         lpFileName,
         dwDesiredAccess,
         dwShareMode,
@@ -156,13 +128,13 @@ BOOL WINAPI HookGetFileInformationByHandle(
         auto entry = (PLDR_DATA_TABLE_ENTRY)iter->value;
         auto module = MapMemoryModuleHandle((HMEMORYMODULE)entry->DllBase);
 
-        lpFileInformation->ftCreationTime = lpFileInformation->ftLastAccessTime = lpFileInformation->ftLastWriteTime = AssemblyTimes;
+        lpFileInformation->ftCreationTime = lpFileInformation->ftLastAccessTime = lpFileInformation->ftLastWriteTime = MmpGlobalDataPtr->MmpDotNet.AssemblyTimes;
         lpFileInformation->nFileSizeLow = module->dwImageFileSize;
 
         return TRUE;
     }
     else {
-        return OriginGetFileInformationByHandle(
+        return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileInformationByHandle(
             hFile,
             lpFileInformation
         );
@@ -185,7 +157,7 @@ BOOL WINAPI HookGetFileAttributesExW(
             LPWIN32_FILE_ATTRIBUTE_DATA data = (LPWIN32_FILE_ATTRIBUTE_DATA)lpFileInformation;
             auto module = MapMemoryModuleHandle((HMEMORYMODULE)entry->DllBase);
 
-            data->ftCreationTime = data->ftLastAccessTime = data->ftLastWriteTime = AssemblyTimes;
+            data->ftCreationTime = data->ftLastAccessTime = data->ftLastWriteTime = MmpGlobalDataPtr->MmpDotNet.AssemblyTimes;
             data->nFileSizeLow = module->dwImageFileSize;
             return TRUE;
         }
@@ -194,7 +166,7 @@ BOOL WINAPI HookGetFileAttributesExW(
         }
     }
 
-    return OriginGetFileAttributesExW(
+    return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileAttributesExW(
         lpFileName,
         fInfoLevelId,
         lpFileInformation
@@ -215,7 +187,7 @@ DWORD WINAPI HookGetFileSize(
         return module->dwImageFileSize;
     }
     else {
-        return OriginGetFileSize(
+        return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileSize(
             hFile,
             lpFileSizeHigh
         );
@@ -236,7 +208,7 @@ BOOL WINAPI HookGetFileSizeEx(
         return TRUE;
     }
     else {
-        return OriginGetFileSizeEx(
+        return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileSizeEx(
             hFile,
             lpFileSize
         );
@@ -260,7 +232,7 @@ HANDLE WINAPI HookCreateFileMappingW(
         return hEvent;
     }
 
-    return OriginCreateFileMappingW(
+    return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCreateFileMappingW(
         hFile,
         lpFileMappingAttributes,
         flProtect,
@@ -296,7 +268,7 @@ LPVOID WINAPI HookMapViewOfFileEx(
         return hModule;
     }
 
-    return OriginMapViewOfFileEx(
+    return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginMapViewOfFileEx(
         hFileMappingObject,
         dwDesiredAccess,
         dwFileOffsetHigh,
@@ -332,14 +304,14 @@ BOOL WINAPI HookUnmapViewOfFile(_In_ LPCVOID lpBaseAddress) {
         return TRUE;
     }
 
-    return OriginUnmapViewOfFile(lpBaseAddress);
+    return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginUnmapViewOfFile(lpBaseAddress);
 }
 
 BOOL WINAPI HookCloseHandle(_In_ _Post_ptr_invalid_ HANDLE hObject) {
     auto iter = MmpFindHandleEntry(hObject);
     if (iter)MmpFreeHandleEntry(iter);
 
-    return OriginCloseHandle(hObject);
+    return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCloseHandle(hObject);
 }
 
 HRESULT WINAPI HookGetFileVersion(
@@ -382,7 +354,7 @@ HRESULT WINAPI HookGetFileVersion(
 
     }
 
-    return OriginGetFileVersion1(
+    return MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileVersion1(
         szFilename,
         szBuffer,
         cchBuffer,
@@ -394,63 +366,74 @@ BOOL WINAPI MmpPreInitializeHooksForDotNet() {
 
     EnterCriticalSection(NtCurrentPeb()->FastPebLock);
 
-    if (!g_PreHooked) {
+    if (!MmpGlobalDataPtr->MmpDotNet.PreHooked) {
         HMODULE hModule = LoadLibraryW(L"mscoree.dll");
         if (hModule) {
-            OriginGetFileVersion2 = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
-            if (OriginGetFileVersion2) {
+            MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileVersion2 = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
+            if (MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileVersion2) {
 
-                GetSystemTimeAsFileTime(&AssemblyTimes);
+                GetSystemTimeAsFileTime(&MmpGlobalDataPtr->MmpDotNet.AssemblyTimes);
 
-                InitializeCriticalSection(&MmpFakeHandleListLock);
-                InitializeListHead(&MmpFakeHandleListHead);
+                InitializeCriticalSection(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListLock);
+                InitializeListHead(&MmpGlobalDataPtr->MmpDotNet.MmpFakeHandleListHead);
+
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCreateFileW = CreateFileW;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileInformationByHandle = GetFileInformationByHandle;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileAttributesExW = GetFileAttributesExW;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileSize = GetFileSize;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileSizeEx = GetFileSizeEx;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCreateFileMappingW = CreateFileMappingW;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginMapViewOfFileEx = MapViewOfFileEx;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginMapViewOfFile = MapViewOfFile;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginUnmapViewOfFile = UnmapViewOfFile;
+                MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCloseHandle = CloseHandle;
 
                 DetourTransactionBegin();
                 DetourUpdateThread(NtCurrentThread());
 
-                DetourAttach((PVOID*)&OriginCreateFileW, HookCreateFileW);
-                DetourAttach((PVOID*)&OriginGetFileInformationByHandle, HookGetFileInformationByHandle);
-                DetourAttach((PVOID*)&OriginGetFileAttributesExW, HookGetFileAttributesExW);
-                DetourAttach((PVOID*)&OriginGetFileSize, HookGetFileSize);
-                DetourAttach((PVOID*)&OriginGetFileSizeEx, HookGetFileSizeEx);
-                DetourAttach((PVOID*)&OriginCreateFileMappingW, HookCreateFileMappingW);
-                DetourAttach((PVOID*)&OriginMapViewOfFileEx, HookMapViewOfFileEx);
-                DetourAttach((PVOID*)&OriginMapViewOfFile, HookMapViewOfFile);
-                DetourAttach((PVOID*)&OriginUnmapViewOfFile, HookUnmapViewOfFile);
-                DetourAttach((PVOID*)&OriginCloseHandle, HookCloseHandle);
-                DetourAttach((PVOID*)&OriginGetFileVersion2, HookGetFileVersion);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCreateFileW, HookCreateFileW);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileInformationByHandle, HookGetFileInformationByHandle);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileAttributesExW, HookGetFileAttributesExW);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileSize, HookGetFileSize);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileSizeEx, HookGetFileSizeEx);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCreateFileMappingW, HookCreateFileMappingW);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginMapViewOfFileEx, HookMapViewOfFileEx);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginMapViewOfFile, HookMapViewOfFile);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginUnmapViewOfFile, HookUnmapViewOfFile);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginCloseHandle, HookCloseHandle);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileVersion2, HookGetFileVersion);
 
                 DetourTransactionCommit();
 
-                g_PreHooked = TRUE;
+                MmpGlobalDataPtr->MmpDotNet.PreHooked = TRUE;
             }
         }
     }
 
     LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
 
-    return g_PreHooked;
+    return MmpGlobalDataPtr->MmpDotNet.PreHooked;
 }
 
 BOOL WINAPI MmpInitializeHooksForDotNet() {
     HMODULE hModule = GetModuleHandleW(L"mscoreei.dll");
     if (hModule) {
-        OriginGetFileVersion1 = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
-        if (OriginGetFileVersion1) {
+        MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileVersion1 = (GetFileVersion_T)GetProcAddress(hModule, "GetFileVersion");
+        if (MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileVersion1) {
 
             EnterCriticalSection(NtCurrentPeb()->FastPebLock);
 
-            if (!g_PreHooked) {
+            if (!MmpGlobalDataPtr->MmpDotNet.PreHooked) {
                 LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
                 return FALSE;
             }
 
-            if (!g_Initialized) {
+            if (!MmpGlobalDataPtr->MmpDotNet.Initialized) {
                 DetourTransactionBegin();
                 DetourUpdateThread(NtCurrentThread());
-                DetourAttach((PVOID*)&OriginGetFileVersion1, HookGetFileVersion);
+                DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpDotNet.Hooks.OriginGetFileVersion1, HookGetFileVersion);
                 DetourTransactionCommit();
-                g_Initialized = TRUE;
+                MmpGlobalDataPtr->MmpDotNet.Initialized = TRUE;
             }
 
             LeaveCriticalSection(NtCurrentPeb()->FastPebLock);

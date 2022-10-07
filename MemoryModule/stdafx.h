@@ -34,3 +34,6 @@
 
 //utils
 #include "Utils.h"
+
+//global data
+#include "MmpGlobalData.h"

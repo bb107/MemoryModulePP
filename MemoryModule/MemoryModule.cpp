@@ -8,6 +8,23 @@
 
 #define GET_HEADER_DICTIONARY(headers, idx)  &headers->OptionalHeader.DataDirectory[idx]
 
+#define AlignValueUp(value, alignment) ((size_t(value) + size_t(alignment) + 1) & ~(size_t(alignment) - 1))
+
+#define OffsetPointer(data, offset) LPVOID(LPBYTE(data) + ptrdiff_t(offset))
+
+// Protection flags for memory pages (Executable, Readable, Writeable)
+static const int ProtectionFlags[2][2][2] = {
+	{
+		// not executable
+		{PAGE_NOACCESS, PAGE_WRITECOPY},
+		{PAGE_READONLY, PAGE_READWRITE},
+	}, {
+		// executable
+		{PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY},
+		{PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE},
+	},
+};
+
 int MmpSizeOfImageHeadersUnsafe(PVOID BaseAddress) {
 	PIMAGE_DOS_HEADER dh = (PIMAGE_DOS_HEADER)BaseAddress;
 	PIMAGE_NT_HEADERS nh = (PIMAGE_NT_HEADERS)((LPBYTE)BaseAddress + dh->e_lfanew);
@@ -34,33 +51,10 @@ PMEMORYMODULE WINAPI MapMemoryModuleHandle(HMEMORYMODULE hModule) {
 	return pModule;
 }
 
-bool WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule) {
+BOOL WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule) {
 	return MapMemoryModuleHandle(hModule) != nullptr;
 }
 
-#define AlignValueUp(value, alignment) ((size_t(value) + size_t(alignment) + 1) & ~(size_t(alignment) - 1))
-
-#define OffsetPointer(data, offset) LPVOID(LPBYTE(data) + ptrdiff_t(offset))
-
-
-// Protection flags for memory pages (Executable, Readable, Writeable)
-static int ProtectionFlags[2][2][2] = {
-	{
-		// not executable
-		{PAGE_NOACCESS, PAGE_WRITECOPY},
-		{PAGE_READONLY, PAGE_READWRITE},
-	}, {
-		// executable
-		{PAGE_EXECUTE, PAGE_EXECUTE_WRITECOPY},
-		{PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE},
-	},
-};
-
-static SYSTEM_INFO sysInfo = []()->SYSTEM_INFO {
-	SYSTEM_INFO tmp;
-	GetNativeSystemInfo(&tmp);
-	return tmp;
-}();
 
 NTSTATUS MemoryResolveImportTable(
 	_In_ LPBYTE base,
@@ -87,15 +81,11 @@ NTSTATUS MemoryResolveImportTable(
 			}
 
 			if (importDesc && count) {
-				if (!(hMemoryModule->hModulesList = new HMODULE[count])) {
+				hMemoryModule->hModulesList = (HMODULE*)RtlAllocateHeap(NtCurrentPeb()->ProcessHeap, HEAP_ZERO_MEMORY, sizeof(HMODULE) * count);
+				if (!hMemoryModule->hModulesList) {
 					status = STATUS_NO_MEMORY;
 					break;
 				}
-
-				RtlZeroMemory(
-					hMemoryModule->hModulesList,
-					sizeof(HMODULE) * count
-				);
 
 				for (DWORD i = 0; i < count; ++i, ++importDesc) {
 					uintptr_t* thunkRef;
@@ -137,7 +127,7 @@ NTSTATUS MemoryResolveImportTable(
 		for (DWORD i = 0; i < hMemoryModule->dwModulesCount; ++i)
 			FreeLibrary(hMemoryModule->hModulesList[i]);
 
-		delete[]hMemoryModule->hModulesList;
+		RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, hMemoryModule->hModulesList);
 		hMemoryModule->hModulesList = nullptr;
 		hMemoryModule->dwModulesCount = 0;
 	}
@@ -271,7 +261,7 @@ NTSTATUS MemoryLoadLibrary(
 	//
 	// Allocate memory for image headers
 	//
-	size_t alignedHeadersSize = (DWORD)AlignValueUp(old_header->OptionalHeader.SizeOfHeaders + sizeof(MEMORYMODULE), sysInfo.dwPageSize);
+	size_t alignedHeadersSize = (DWORD)AlignValueUp(old_header->OptionalHeader.SizeOfHeaders + sizeof(MEMORYMODULE), MmpGlobalDataPtr->SystemInfo.dwPageSize);
 	if (!VirtualAlloc(base, alignedHeadersSize, MEM_COMMIT, PAGE_READWRITE)) {
 		VirtualFree(base, 0, MEM_RELEASE);
 		status = STATUS_NO_MEMORY;
@@ -412,21 +402,22 @@ NTSTATUS MemoryLoadLibrary(
 	return status;
 }
 
-bool MemoryFreeLibrary(HMEMORYMODULE mod) {
+BOOL MemoryFreeLibrary(HMEMORYMODULE mod) {
 	PMEMORYMODULE module = MapMemoryModuleHandle(mod);
 	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(mod);
 
-	if (!module) return false;
-	if (module->loadFromNtLoadDllMemory && !module->underUnload)return false;
+	if (!module) return FALSE;
+	if (module->loadFromNtLoadDllMemory && !module->underUnload)return FALSE;
 	if (module->hModulesList) {
 		for (DWORD i = 0; i < module->dwModulesCount; ++i) {
 			if (module->hModulesList[i]) {
 				FreeLibrary(module->hModulesList[i]);
 			}
 		}
-		delete[] module->hModulesList;
+		
+		RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, module->hModulesList);
 	}
 
 	if (module->codeBase) VirtualFree(mod, 0, MEM_RELEASE);
-	return true;
+	return TRUE;
 }

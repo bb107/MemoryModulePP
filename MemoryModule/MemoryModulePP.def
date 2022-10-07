@@ -1,0 +1,13 @@
+LIBRARY
+EXPORTS
+LoadLibraryMemory
+LoadLibraryMemoryExA
+LoadLibraryMemoryExW
+FreeLibraryMemory
+
+LdrLoadDllMemory
+LdrLoadDllMemoryExA
+LdrLoadDllMemoryExW
+LdrUnloadDllMemory
+LdrUnloadDllMemoryAndExitThread
+LdrQuerySystemMemoryModuleFeatures

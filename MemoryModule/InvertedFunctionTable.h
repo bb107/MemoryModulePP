@@ -52,14 +52,9 @@ typedef RTL_INVERTED_FUNCTION_TABLE_WIN7_32 _RTL_INVERTED_FUNCTION_TABLE, RTL_IN
 typedef _RTL_INVERTED_FUNCTION_TABLE_ENTRY_WIN7_32 _RTL_INVERTED_FUNCTION_TABLE_ENTRY, RTL_INVERTED_FUNCTION_TABLE_ENTRY, * PRTL_INVERTED_FUNCTION_TABLE_ENTRY;
 #endif
 
-PVOID NTAPI RtlFindLdrpInvertedFunctionTable();
+NTSTATUS NTAPI RtlInsertInvertedFunctionTable(
+	_In_ PVOID BaseAddress,
+	_In_ ULONG ImageSize
+);
 
-NTSTATUS NTAPI RtlInsertInvertedFunctionTable(IN PVOID BaseAddress, IN size_t ImageSize);
-NTSTATUS NTAPI RtlRemoveInvertedFunctionTable(IN PVOID ImageBase);
-
-
-#ifdef _WIN64
-#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable64
-#else
-#define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable32
-#endif
+NTSTATUS NTAPI RtlRemoveInvertedFunctionTable(_In_ PVOID ImageBase);
