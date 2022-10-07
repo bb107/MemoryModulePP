@@ -256,7 +256,7 @@ NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress) {
 			if (!(count & ~1)) {
 				module->underUnload = true;
 				if (module->initialized) {
-					PDLL_STARTUP_ROUTINE((LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))(
+					PLDR_INIT_ROUTINE((LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))(
 						(HINSTANCE)module->codeBase,
 						DLL_PROCESS_DETACH,
 						0

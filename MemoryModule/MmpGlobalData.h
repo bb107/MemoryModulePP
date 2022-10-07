@@ -14,6 +14,9 @@ typedef struct _MMP_INVERTED_FUNCTION_TABLE_DATA {
 //LdrEntry.cpp
 typedef struct _MMP_LDR_ENTRY_DATA {
 	PLIST_ENTRY LdrpHashTable;
+
+	decltype(&RtlRbInsertNodeEx)_RtlRbInsertNodeEx;
+	decltype(&RtlRbRemoveNode)_RtlRbRemoveNode;
 }MMP_LDR_ENTRY_DATA, * PMMP_LDR_ENTRY_DATA;
 
 //MmpTls.cpp
@@ -65,10 +68,11 @@ typedef enum class _WINDOWS_VERSION :BYTE {
 	vista,
 	win7,
 	win8,
-	win8_1,
+	winBlue,
 	win10,
 	win10_1,
 	win10_2,
+	win11,
 	invalid
 }WINDOWS_VERSION;
 

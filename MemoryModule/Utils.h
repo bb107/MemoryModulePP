@@ -26,8 +26,6 @@ NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
 	_Inout_ PSEARCH_CONTEXT SearchContext
 );
 
-typedef BOOL(WINAPI* PDLL_STARTUP_ROUTINE)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
-
 NTSTATUS NTAPI RtlResolveDllNameUnicodeString(
 	_In_opt_ PCWSTR DllName,
 	_In_opt_ PCWSTR DllFullName,
@@ -43,8 +41,6 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(
 	_In_ PVOID Buffer,
 	_Out_opt_ size_t* Size
 );
-
-FARPROC NTAPI RtlGetNtProcAddress(LPCSTR func_name);
 
 BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
 BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);

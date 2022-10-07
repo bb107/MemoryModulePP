@@ -49,6 +49,22 @@ int test() {
 }
 
 int main() {
-    test();
+    if (MmpGlobalDataPtr->WindowsVersion == WINDOWS_VERSION::win11) {
+        auto head = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
+        auto entry = head->Flink;
+        while (entry != head) {
+            PLDR_DATA_TABLE_ENTRY_WIN11 __entry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY_WIN11, InLoadOrderLinks);
+            wprintf(L"%s\t0x%08X, 0x%08X, 0x%p, %d\n",
+                __entry->BaseDllName.Buffer,
+                __entry->CheckSum,
+                RtlImageNtHeader(__entry->DllBase)->OptionalHeader.CheckSum,
+                __entry->ActivePatchImageBase,
+                __entry->HotPatchState
+            );
+
+            entry = entry->Flink;
+        }
+    }
+
     return 0;
 }

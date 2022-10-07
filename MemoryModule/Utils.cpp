@@ -138,7 +138,7 @@ BOOL NTAPI LdrpCallInitializers(PMEMORYMODULE module, DWORD dwReason) {
 	if (headers->OptionalHeader.AddressOfEntryPoint) {
 		__try {
 			// notify library about attaching to process
-			if (((PDLL_STARTUP_ROUTINE)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)module->codeBase, dwReason, 0)) {
+			if (((PLDR_INIT_ROUTINE)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)module->codeBase, dwReason, 0)) {
 				module->initialized = TRUE;
 				return TRUE;
 			}
@@ -309,10 +309,6 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(
 		SetLastError(RtlNtStatusToDosError(GetExceptionCode()));
 	}
 	return result;
-}
-
-FARPROC NTAPI RtlGetNtProcAddress(LPCSTR func_name) {
-	return GetProcAddress(GetModuleHandleA("ntdll.dll"), func_name);
 }
 
 BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS_MASK protect) {

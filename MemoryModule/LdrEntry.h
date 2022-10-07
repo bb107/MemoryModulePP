@@ -199,9 +199,9 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN8 {
 }LDR_DATA_TABLE_ENTRY_WIN8, * PLDR_DATA_TABLE_ENTRY_WIN8;
 
 //6.3.9600	Windows 8.1 | 2012R2 RTM | 2012R2 Update 1
-typedef struct _LDR_DATA_TABLE_ENTRY_WIN8_1 :public _LDR_DATA_TABLE_ENTRY_WIN8 {
+typedef struct _LDR_DATA_TABLE_ENTRY_WINBLUE :public _LDR_DATA_TABLE_ENTRY_WIN8 {
 	ULONG ImplicitPathOptions;
-}LDR_DATA_TABLE_ENTRY_WIN8_1, * PLDR_DATA_TABLE_ENTRY_WIN8_1;
+}LDR_DATA_TABLE_ENTRY_WINBLUE, * PLDR_DATA_TABLE_ENTRY_WINBLUE;
 
 //10.0.10240	Windows 10 | 2016 1507 Threshold 1
 //10.0.10586	Windows 10 | 2016 1511 Threshold 2
@@ -280,69 +280,18 @@ typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_1 :public _LDR_DATA_TABLE_ENTRY_WIN10
 //10.0.18362	Windows 10 | 2016 1903 19H1 (May 2019 Update) | 2016 1909 19H2 (November 2019 Update)
 //10.0.19041	Windows 10 | 2016 2004 20H1 (May 2020 Update)
 //10.0.19042	Windows 10 | 2016 2009 20H2 (October 2020 Update)
-typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_2 {
-	_LIST_ENTRY InLoadOrderLinks;											//0x0
-	_LIST_ENTRY InMemoryOrderLinks;											//0x10
-	_LIST_ENTRY InInitializationOrderLinks;									//0x20
-	VOID* DllBase;                                                          //0x30
-	VOID* EntryPoint;                                                       //0x38
-	ULONG SizeOfImage;                                                      //0x40
-	_UNICODE_STRING FullDllName;											//0x48
-	_UNICODE_STRING BaseDllName;											//0x58
-	union {
-		UCHAR FlagGroup[4];                                                 //0x68
-		ULONG Flags;                                                        //0x68
-		struct {
-			ULONG PackagedBinary : 1;                                         //0x68
-			ULONG MarkedForRemoval : 1;                                       //0x68
-			ULONG ImageDll : 1;                                               //0x68
-			ULONG LoadNotificationsSent : 1;                                  //0x68
-			ULONG TelemetryEntryProcessed : 1;                                //0x68
-			ULONG ProcessStaticImport : 1;                                    //0x68
-			ULONG InLegacyLists : 1;                                          //0x68
-			ULONG InIndexes : 1;                                              //0x68
-			ULONG ShimDll : 1;                                                //0x68
-			ULONG InExceptionTable : 1;                                       //0x68
-			ULONG ReservedFlags1 : 2;                                         //0x68
-			ULONG LoadInProgress : 1;                                         //0x68
-			ULONG LoadConfigProcessed : 1;                                    //0x68
-			ULONG EntryProcessed : 1;                                         //0x68
-			ULONG ProtectDelayLoad : 1;                                       //0x68
-			ULONG ReservedFlags3 : 2;                                         //0x68
-			ULONG DontCallForThreads : 1;                                     //0x68
-			ULONG ProcessAttachCalled : 1;                                    //0x68
-			ULONG ProcessAttachFailed : 1;                                    //0x68
-			ULONG CorDeferredValidate : 1;                                    //0x68
-			ULONG CorImage : 1;                                               //0x68
-			ULONG DontRelocate : 1;                                           //0x68
-			ULONG CorILOnly : 1;                                              //0x68
-			ULONG ReservedFlags5 : 3;                                         //0x68
-			ULONG Redirected : 1;                                             //0x68
-			ULONG ReservedFlags6 : 2;                                         //0x68
-			ULONG CompatDatabaseProcessed : 1;                                //0x68
-		};
-	};
-	USHORT ObsoleteLoadCount;                                               //0x6c
-	USHORT TlsIndex;                                                        //0x6e
-	_LIST_ENTRY HashLinks;												    //0x70
-	ULONG TimeDateStamp;                                                    //0x80
-	_ACTIVATION_CONTEXT* EntryPointActivationContext;			            //0x88
-	VOID* Lock;                                                             //0x90
-	_LDR_DDAG_NODE* DdagNode;											    //0x98
-	_LIST_ENTRY NodeModuleLink;				                                //0xa0
-	VOID* LoadContext;						                                //0xb0
-	VOID* ParentDllBase;                                                    //0xb8
-	VOID* SwitchBackContext;                                                //0xc0
-	_RTL_BALANCED_NODE BaseAddressIndexNode;								//0xc8
-	_RTL_BALANCED_NODE MappingInfoIndexNode;								//0xe0
-	ULONGLONG OriginalBase;                                                 //0xf8
-	_LARGE_INTEGER LoadTime;												//0x100
-	ULONG BaseNameHashValue;                                                //0x108
-	_LDR_DLL_LOAD_REASON LoadReason;										//0x10c
-	ULONG ImplicitPathOptions;                                              //0x110
-	ULONG ReferenceCount;                                                   //0x114
+typedef struct _LDR_DATA_TABLE_ENTRY_WIN10_2 :LDR_DATA_TABLE_ENTRY_WIN10 {
 	ULONG DependentLoadFlags;                                               //0x118
 	UCHAR SigningLevel;                                                     //0x11c
 }LDR_DATA_TABLE_ENTRY_WIN10_2, * PLDR_DATA_TABLE_ENTRY_WIN10_2;
 
-ULONG NTAPI LdrHashEntry(_In_ UNICODE_STRING& str, _In_ BOOL _xor = TRUE);
+//10.0.22000	Windows 11 Insider Preview (Jun 2021)
+//10.0.22000	Windows 11 21H2 (RTM)
+//10.0.22621	Windows 11 22H2 (2022 Update)
+typedef struct _LDR_DATA_TABLE_ENTRY_WIN11 :LDR_DATA_TABLE_ENTRY_WIN10_2 {
+	ULONG CheckSum;                                                         //0x120
+	VOID* ActivePatchImageBase;                                             //0x128
+	LDR_HOT_PATCH_STATE HotPatchState;                                      //0x130
+}LDR_DATA_TABLE_ENTRY_WIN11, * PLDR_DATA_TABLE_ENTRY_WIN11;
+
+ULONG NTAPI LdrHashEntry(_In_ UNICODE_STRING& DllBaseName, _In_ BOOL ToIndex = TRUE);

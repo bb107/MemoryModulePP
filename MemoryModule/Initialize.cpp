@@ -191,11 +191,13 @@ VOID InitializeWindowsVersion() {
 	case 5: {
 		switch (MmpGlobalDataPtr->NtVersions.MinorVersion) {
 		case 1:
-			version = MmpGlobalDataPtr->NtVersions.BuildNumber == 2600 ? WINDOWS_VERSION::xp : WINDOWS_VERSION::invalid;
+			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 2600)
+				version = WINDOWS_VERSION::xp;
 			break;
 
 		case 2:
-			version = MmpGlobalDataPtr->NtVersions.BuildNumber == 3790 ? WINDOWS_VERSION::xp : WINDOWS_VERSION::invalid;
+			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 3790)
+				version = WINDOWS_VERSION::xp;
 			break;
 		}
 		break;
@@ -225,12 +227,14 @@ VOID InitializeWindowsVersion() {
 		}
 
 		case 2: {
-			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 9200) version = WINDOWS_VERSION::win8;
+			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 9200)
+				version = WINDOWS_VERSION::win8;
 			break;
 		}
 
 		case 3: {
-			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 9600) version = WINDOWS_VERSION::win8_1;
+			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 9600)
+				version = WINDOWS_VERSION::winBlue;
 			break;
 		}
 
@@ -240,27 +244,29 @@ VOID InitializeWindowsVersion() {
 
 	case 10: {
 		if (MmpGlobalDataPtr->NtVersions.MinorVersion)break;
-		switch (MmpGlobalDataPtr->NtVersions.BuildNumber) {
-		case 10240:
-		case 10586: 
-			version = WINDOWS_VERSION::win10;
-			break;
 
-		case 14393: 
-			version = WINDOWS_VERSION::win10_1;
-			break;
-
-		case 15063:
-		case 16299:
-		case 17134:
-		case 17763:
-		case 18362:
-			version = WINDOWS_VERSION::win10_2;
-			break;
-
-		default:
-			if (RtlIsWindowsVersionOrGreater(MmpGlobalDataPtr->NtVersions.MajorVersion, MmpGlobalDataPtr->NtVersions.MinorVersion, 15063)) version = WINDOWS_VERSION::win10_2;
-			break;
+		DWORD BuildNumber = MmpGlobalDataPtr->NtVersions.BuildNumber;
+		if (BuildNumber >= 10240) {
+			if (BuildNumber >= 14393) {
+				if (BuildNumber >= 15063) {
+					if (BuildNumber >= 22000) {
+						// [22000, ?)
+						version = WINDOWS_VERSION::win11;
+					}
+					else {
+						// [15063, 22000)
+						version = WINDOWS_VERSION::win10_2;
+					}
+				}
+				else {
+					//  [13494, 15063)
+					version = WINDOWS_VERSION::win10_1;
+				}
+			}
+			else {
+				// [10240, 14393)
+				version = WINDOWS_VERSION::win10;
+			}
 		}
 
 		break;
@@ -369,8 +375,8 @@ NTSTATUS InitializeLockHeld() {
 			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN8);
 			break;
 
-		case WINDOWS_VERSION::win8_1:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN8_1);
+		case WINDOWS_VERSION::winBlue:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WINBLUE);
 			break;
 
 		case WINDOWS_VERSION::win10:
@@ -385,13 +391,24 @@ NTSTATUS InitializeLockHeld() {
 			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
 			break;
 
+		case WINDOWS_VERSION::win11:
+			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN11);
+			break;
+
 		default:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
+			NtUnmapViewOfSection(NtCurrentProcess(), BaseAddress);
+			status = STATUS_NOT_SUPPORTED;
 			break;
 		}
 
+		if (!NT_SUCCESS(status))break;
+
 		MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
         MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex = FindLdrpModuleBaseAddressIndex();
+
+		HMODULE hNtdll = (HMODULE)MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry->DllBase;
+		MmpGlobalDataPtr->MmpLdrEntry._RtlRbInsertNodeEx = decltype(&RtlRbInsertNodeEx)(GetProcAddress(hNtdll, "RtlRbInsertNodeEx"));
+		MmpGlobalDataPtr->MmpLdrEntry._RtlRbRemoveNode = decltype(&RtlRbRemoveNode)(GetProcAddress(hNtdll, "RtlRbRemoveNode"));
 
 		MmpGlobalDataPtr->MmpLdrEntry.LdrpHashTable = FindLdrpHashTable();
 

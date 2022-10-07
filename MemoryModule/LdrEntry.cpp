@@ -120,6 +120,11 @@ BOOL NTAPI RtlInitializeLdrDataTableEntry(
 	}
 
 	switch (MmpGlobalDataPtr->WindowsVersion) {
+	case WINDOWS_VERSION::win11: {
+		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN11)LdrEntry;
+		entry->CheckSum = headers->OptionalHeader.CheckSum;
+	}
+		
 	case WINDOWS_VERSION::win10:
 	case WINDOWS_VERSION::win10_1:
 	case WINDOWS_VERSION::win10_2: {
@@ -127,7 +132,7 @@ BOOL NTAPI RtlInitializeLdrDataTableEntry(
 		entry->ReferenceCount = 1;
 	}
 	case WINDOWS_VERSION::win8:
-	case WINDOWS_VERSION::win8_1: {
+	case WINDOWS_VERSION::winBlue: {
 		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN8)LdrEntry;
 		const static bool IsWin8 = RtlIsWindowsVersionInScope(6, 2, 0, 6, 3, -1);
 		NtQuerySystemTime(&entry->LoadTime);
@@ -137,9 +142,7 @@ BOOL NTAPI RtlInitializeLdrDataTableEntry(
 		if (!NT_SUCCESS(RtlInsertModuleBaseAddressIndexNode(LdrEntry, BaseAddress)))return FALSE;
 		if (!(entry->DdagNode = (decltype(entry->DdagNode))
 			RtlAllocateHeap(heap, HEAP_ZERO_MEMORY, IsWin8 ? sizeof(_LDR_DDAG_NODE_WIN8) : sizeof(_LDR_DDAG_NODE))))return FALSE;
-		//RtlInitializeListEntry(&entry->NodeModuleLink);
-		//RtlInitializeListEntry(&entry->DdagNode->Modules);
-		//RtlInitializeSingleEntry(&entry->DdagNode->CondenseLink);
+
 		entry->NodeModuleLink.Flink = &entry->DdagNode->Modules;
 		entry->NodeModuleLink.Blink = &entry->DdagNode->Modules;
 		entry->DdagNode->Modules.Flink = &entry->NodeModuleLink;
@@ -198,7 +201,7 @@ BOOL NTAPI RtlFreeLdrDataTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	case WINDOWS_VERSION::win10_1:
 	case WINDOWS_VERSION::win10_2:
 	case WINDOWS_VERSION::win8:
-	case WINDOWS_VERSION::win8_1: {
+	case WINDOWS_VERSION::winBlue: {
 		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN10)LdrEntry;
 		RtlFreeDependencies(entry);
 		RtlFreeHeap(heap, 0, entry->DdagNode);
@@ -274,20 +277,17 @@ VOID NTAPI RtlRbInsertNodeEx(
 	_In_ PRTL_BALANCED_NODE Parent,
 	_In_ BOOLEAN Right,
 	_Out_ PRTL_BALANCED_NODE Node) {
-	static decltype(&RtlRbInsertNodeEx)_RtlRbInsertNodeEx = decltype(_RtlRbInsertNodeEx)(RtlGetNtProcAddress("RtlRbInsertNodeEx"));
-
 	RtlZeroMemory(Node, sizeof(*Node));
 
-	if (!_RtlRbInsertNodeEx)return;
-	return _RtlRbInsertNodeEx(Tree, Parent, Right, Node);
+	if (!MmpGlobalDataPtr->MmpLdrEntry._RtlRbInsertNodeEx)return;
+	return MmpGlobalDataPtr->MmpLdrEntry._RtlRbInsertNodeEx(Tree, Parent, Right, Node);
 }
 
 VOID NTAPI RtlRbRemoveNode(
 	_In_ PRTL_RB_TREE Tree,
 	_In_ PRTL_BALANCED_NODE Node) {
-	static decltype(&RtlRbRemoveNode)_RtlRbRemoveNode = decltype(_RtlRbRemoveNode)(RtlGetNtProcAddress("RtlRbRemoveNode"));
-	if (!_RtlRbRemoveNode)return;
-	return _RtlRbRemoveNode(Tree, Node);
+	if (!MmpGlobalDataPtr->MmpLdrEntry._RtlRbRemoveNode)return;
+	return MmpGlobalDataPtr->MmpLdrEntry._RtlRbRemoveNode(Tree, Node);
 }
 
 PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(_In_ PVOID BaseAddress) {
@@ -317,15 +317,15 @@ PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(_In_z_ PCWSTR BaseNam
 	return nullptr;
 }
 
-ULONG NTAPI LdrHashEntry(_In_ UNICODE_STRING& str, _In_ BOOL _xor) {
+ULONG NTAPI LdrHashEntry(_In_ UNICODE_STRING& DllBaseName, _In_ BOOL ToIndex) {
 	ULONG result = 0;
 	if (RtlIsWindowsVersionOrGreater(6, 2, 0)) {
-		RtlHashUnicodeString(&str, TRUE, HASH_STRING_ALGORITHM_DEFAULT, &result);
+		RtlHashUnicodeString(&DllBaseName, TRUE, HASH_STRING_ALGORITHM_DEFAULT, &result);
 	}
 	else {
-		for (USHORT i = 0; i < (str.Length / sizeof(wchar_t)); ++i)
-			result += 0x1003F * RtlUpcaseUnicodeChar(str.Buffer[i]);
+		for (USHORT i = 0; i < (DllBaseName.Length / sizeof(wchar_t)); ++i)
+			result += 0x1003F * RtlUpcaseUnicodeChar(DllBaseName.Buffer[i]);
 	}
-	if (_xor)result &= (LDR_HASH_TABLE_ENTRIES - 1);
+	if (ToIndex)result &= (LDR_HASH_TABLE_ENTRIES - 1);
 	return result;
 }
