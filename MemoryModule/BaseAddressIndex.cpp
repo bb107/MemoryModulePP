@@ -3,7 +3,7 @@
 NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(
 	_In_ PLDR_DATA_TABLE_ENTRY DataTableEntry,
 	_In_ PVOID BaseAddress) {
-	auto LdrpModuleBaseAddressIndex = MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex;
+	auto LdrpModuleBaseAddressIndex = MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex;
 	if (!LdrpModuleBaseAddressIndex)return STATUS_UNSUCCESSFUL;
 
 	PLDR_DATA_TABLE_ENTRY_WIN8 LdrNode = decltype(LdrNode)((size_t)LdrpModuleBaseAddressIndex - offsetof(LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode));
@@ -35,7 +35,7 @@ NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(
 }
 
 NTSTATUS NTAPI RtlRemoveModuleBaseAddressIndexNode(_In_ PLDR_DATA_TABLE_ENTRY DataTableEntry) {
-	static auto tree{ MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex };
+	static auto tree{ MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex };
 	if (!tree->Root)return STATUS_UNSUCCESSFUL;
 	RtlRbRemoveNode(tree, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
 	return STATUS_SUCCESS;

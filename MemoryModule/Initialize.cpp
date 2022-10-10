@@ -12,7 +12,7 @@ BOOLEAN MmpBuildSectionName(_Out_ PUNICODE_STRING SectionName) {
 
 PRTL_RB_TREE FindLdrpModuleBaseAddressIndex() {
     PRTL_RB_TREE LdrpModuleBaseAddressIndex = nullptr;
-    PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry);
+    PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry);
     PRTL_BALANCED_NODE node = nullptr;
     if (!nt10 || !RtlIsWindowsVersionOrGreater(6, 2, 0))return nullptr;
     node = &nt10->BaseAddressIndexNode;
@@ -186,55 +186,64 @@ PLIST_ENTRY FindLdrpHashTable() {
 VOID InitializeWindowsVersion() {
 
 	WINDOWS_VERSION version = WINDOWS_VERSION::invalid;
+	DWORD MajorVersion, MinorVersion, BuildNumber, LdrDataTableEntrySize;
 
-	switch (MmpGlobalDataPtr->NtVersions.MajorVersion) {
+	RtlGetNtVersionNumbers(
+		&MajorVersion,
+		&MinorVersion,
+		&BuildNumber
+	);
+	if (BuildNumber & 0xf0000000)BuildNumber &= 0xffff;
+
+	switch (MajorVersion) {
 	case 5: {
-		switch (MmpGlobalDataPtr->NtVersions.MinorVersion) {
-		case 1:
-			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 2600)
-				version = WINDOWS_VERSION::xp;
-			break;
-
-		case 2:
-			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 3790)
-				version = WINDOWS_VERSION::xp;
-			break;
+		if ((MinorVersion == 1 && BuildNumber == 2600) ||
+			(MinorVersion == 2 && BuildNumber == 3790)) {
+			version = WINDOWS_VERSION::xp;
+			LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_XP);
 		}
+
 		break;
 	}
 
 	case 6: {
-		switch (MmpGlobalDataPtr->NtVersions.MinorVersion) {
+		switch (MinorVersion) {
 		case 0: {
-			switch (MmpGlobalDataPtr->NtVersions.BuildNumber) {
+			switch (BuildNumber) {
 			case 6000:
 			case 6001:
 			case 6002:
 				version = WINDOWS_VERSION::vista;
+				LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_VISTA);
 				break;
 			}
 			break;
 		}
 
 		case 1: {
-			switch (MmpGlobalDataPtr->NtVersions.BuildNumber) {
+			switch (BuildNumber) {
 			case 7600:
 			case 7601:
 				version = WINDOWS_VERSION::win7;
+				LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN7);
 				break;
 			}
 			break;
 		}
 
 		case 2: {
-			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 9200)
+			if (BuildNumber == 9200) {
 				version = WINDOWS_VERSION::win8;
+				LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN8);
+			}
 			break;
 		}
 
 		case 3: {
-			if (MmpGlobalDataPtr->NtVersions.BuildNumber == 9600)
+			if (BuildNumber == 9600) {
 				version = WINDOWS_VERSION::winBlue;
+				LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WINBLUE);
+			}
 			break;
 		}
 
@@ -243,29 +252,32 @@ VOID InitializeWindowsVersion() {
 	}
 
 	case 10: {
-		if (MmpGlobalDataPtr->NtVersions.MinorVersion)break;
+		if (MinorVersion)break;
 
-		DWORD BuildNumber = MmpGlobalDataPtr->NtVersions.BuildNumber;
 		if (BuildNumber >= 10240) {
 			if (BuildNumber >= 14393) {
 				if (BuildNumber >= 15063) {
 					if (BuildNumber >= 22000) {
 						// [22000, ?)
 						version = WINDOWS_VERSION::win11;
+						LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN11);
 					}
 					else {
 						// [15063, 22000)
 						version = WINDOWS_VERSION::win10_2;
+						LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
 					}
 				}
 				else {
 					//  [13494, 15063)
 					version = WINDOWS_VERSION::win10_1;
+					LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_1);
 				}
 			}
 			else {
 				// [10240, 14393)
 				version = WINDOWS_VERSION::win10;
+				LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10);
 			}
 		}
 
@@ -275,158 +287,156 @@ VOID InitializeWindowsVersion() {
 	}
 
 	MmpGlobalDataPtr->WindowsVersion = version;
+	if (version != WINDOWS_VERSION::invalid) {
+		MmpGlobalDataPtr->NtVersions.MajorVersion = MajorVersion;
+		MmpGlobalDataPtr->NtVersions.MinorVersion = MinorVersion;
+		MmpGlobalDataPtr->NtVersions.BuildNumber = BuildNumber;
+		MmpGlobalDataPtr->LdrDataTableEntrySize = (WORD)LdrDataTableEntrySize;
+	}
+
+}
+
+NTSTATUS MmpAllocateGlobalData() {
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	HANDLE hSection = nullptr;
+	OBJECT_ATTRIBUTES oa;
+	LARGE_INTEGER li;
+	UNICODE_STRING us{};
+
+	li.QuadPart = 0x1000;
+
+	do {
+
+		if (!MmpBuildSectionName(&us))break;
+
+		InitializeObjectAttributes(&oa, &us, 0, nullptr, nullptr);
+
+		status = NtCreateSection(
+			&hSection,
+			SECTION_ALL_ACCESS,
+			&oa,
+			&li,
+			PAGE_READWRITE,
+			SEC_COMMIT | SEC_BASED,
+			nullptr
+		);
+		if (!NT_SUCCESS(status)) {
+			if (status != STATUS_OBJECT_NAME_COLLISION) break;
+
+			HANDLE hSection2;
+			status = NtOpenSection(
+				&hSection2,
+				SECTION_ALL_ACCESS,
+				&oa
+			);
+			if (!NT_SUCCESS(status))break;
+
+			SECTION_BASIC_INFORMATION sbi{};
+			status = NtQuerySection(
+				hSection2,
+				SECTION_INFORMATION_CLASS::SectionBasicInformation,
+				&sbi,
+				sizeof(sbi),
+				nullptr
+			);
+
+			NtClose(hSection2);
+			MmpGlobalDataPtr = (PMMP_GLOBAL_DATA)sbi.BaseAddress;
+			break;
+		}
+
+		PVOID BaseAddress = 0;
+		SIZE_T ViewSize = 0;
+		status = NtMapViewOfSection(
+			hSection,
+			NtCurrentProcess(),
+			&BaseAddress,
+			0,
+			0,
+			nullptr,
+			&ViewSize,
+			ViewUnmap,
+			0,
+			PAGE_READWRITE
+		);
+		if (!NT_SUCCESS(status))break;
+
+		MmpGlobalDataPtr = (PMMP_GLOBAL_DATA)BaseAddress;
+
+	} while (false);
+
+	RtlFreeUnicodeString(&us);
+
+	if (NT_SUCCESS(status)) {
+		status = hSection ? status : STATUS_ALREADY_INITIALIZED;
+	}
+	else {
+		if (hSection)NtClose(hSection);
+	}
+
+	return status;
 }
 
 NTSTATUS InitializeLockHeld() {
-    NTSTATUS status = STATUS_UNSUCCESSFUL;
-    HANDLE hSection = nullptr;
-    OBJECT_ATTRIBUTES oa;
-    LARGE_INTEGER li;
-    UNICODE_STRING us{};
-
-    li.QuadPart = 0x1000;
+    NTSTATUS status;
 
     do {
 
-        if (!MmpBuildSectionName(&us))break;
+		status = MmpAllocateGlobalData();
+		if (!NT_SUCCESS(status)) {
+			if (status == STATUS_ALREADY_INITIALIZED) {
+				if ((MmpGlobalDataPtr->MajorVersion < MEMORY_MODULE_MAJOR_VERSION) ||
+					(MmpGlobalDataPtr->MajorVersion == MEMORY_MODULE_MAJOR_VERSION && MmpGlobalDataPtr->MinorVersion < MEMORY_MODULE_MINOR_VERSION)) {
+					status = STATUS_NOT_SUPPORTED;
+				}
+				else {
+					status = STATUS_SUCCESS;
+				}
+			}
 
-        InitializeObjectAttributes(&oa, &us, 0, nullptr, nullptr);
+			break;
+		}
 
-        status = NtCreateSection(
-            &hSection,
-            SECTION_ALL_ACCESS,
-            &oa,
-            &li,
-            PAGE_READWRITE,
-            SEC_COMMIT | SEC_BASED,
-            nullptr
-        );
-        if (!NT_SUCCESS(status)) {
-            if (status != STATUS_OBJECT_NAME_COLLISION) break;
-
-            HANDLE hSection2;
-            status = NtOpenSection(
-                &hSection2,
-                SECTION_ALL_ACCESS,
-                &oa
-            );
-            if (!NT_SUCCESS(status))break;
-
-            SECTION_BASIC_INFORMATION sbi{};
-            status = NtQuerySection(
-                hSection2,
-                SECTION_INFORMATION_CLASS::SectionBasicInformation,
-                &sbi,
-                sizeof(sbi),
-                nullptr
-            );
-
-            NtClose(hSection2);
-            MmpGlobalDataPtr = (PMMP_GLOBAL_DATA)sbi.BaseAddress;
-            break;
-        }
-
-        PVOID BaseAddress = 0;
-        SIZE_T ViewSize = 0;
-        status = NtMapViewOfSection(
-            hSection,
-            NtCurrentProcess(),
-            &BaseAddress,
-            0,
-            0,
-            nullptr,
-            &ViewSize,
-            ViewUnmap,
-            0,
-            PAGE_READWRITE
-        );
-        if (!NT_SUCCESS(status))break;
-
-        MmpGlobalDataPtr = (PMMP_GLOBAL_DATA)BaseAddress;
-
-        MmpGlobalDataPtr->MajorVersion = 1;
-        MmpGlobalDataPtr->MinorVersion = 0;
+        MmpGlobalDataPtr->MajorVersion = MEMORY_MODULE_MAJOR_VERSION;
+        MmpGlobalDataPtr->MinorVersion = MEMORY_MODULE_MINOR_VERSION;
 
 		GetSystemInfo(&MmpGlobalDataPtr->SystemInfo);
 
-		RtlGetNtVersionNumbers(
-			&MmpGlobalDataPtr->NtVersions.MajorVersion,
-			&MmpGlobalDataPtr->NtVersions.MinorVersion,
-			&MmpGlobalDataPtr->NtVersions.BuildNumber
-		);
-		if (MmpGlobalDataPtr->NtVersions.BuildNumber & 0xf0000000)MmpGlobalDataPtr->NtVersions.BuildNumber &= 0xffff;
-
 		InitializeWindowsVersion();
-
-		switch (MmpGlobalDataPtr->WindowsVersion) {
-		case WINDOWS_VERSION::xp:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_XP);
-			break;
-
-		case WINDOWS_VERSION::vista:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_VISTA);
-			break;
-
-		case WINDOWS_VERSION::win7:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN7);
-			break;
-
-		case WINDOWS_VERSION::win8:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN8);
-			break;
-
-		case WINDOWS_VERSION::winBlue:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WINBLUE);
-			break;
-
-		case WINDOWS_VERSION::win10:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10);
-			break;
-
-		case WINDOWS_VERSION::win10_1:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_1);
-			break;
-
-		case WINDOWS_VERSION::win10_2:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_2);
-			break;
-
-		case WINDOWS_VERSION::win11:
-			MmpGlobalDataPtr->LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN11);
-			break;
-
-		default:
-			NtUnmapViewOfSection(NtCurrentProcess(), BaseAddress);
+		if (MmpGlobalDataPtr->WindowsVersion == WINDOWS_VERSION::invalid) {
+			NtUnmapViewOfSection(NtCurrentProcess(), MmpGlobalDataPtr);
 			status = STATUS_NOT_SUPPORTED;
 			break;
 		}
 
-		if (!NT_SUCCESS(status))break;
+		MmpGlobalDataPtr->MmpBaseAddressIndex = (PMMP_BASE_ADDRESS_INDEX_DATA)((LPBYTE)MmpGlobalDataPtr + sizeof(MMP_GLOBAL_DATA));
+		MmpGlobalDataPtr->MmpInvertedFunctionTable = (PMMP_INVERTED_FUNCTION_TABLE_DATA)((LPBYTE)MmpGlobalDataPtr->MmpBaseAddressIndex + sizeof(MMP_BASE_ADDRESS_INDEX_DATA));
+		MmpGlobalDataPtr->MmpLdrEntry = (PMMP_LDR_ENTRY_DATA)((LPBYTE)MmpGlobalDataPtr->MmpInvertedFunctionTable + sizeof(MMP_INVERTED_FUNCTION_TABLE_DATA));
+		MmpGlobalDataPtr->MmpTls = (PMMP_TLS_DATA)((LPBYTE)MmpGlobalDataPtr->MmpLdrEntry + sizeof(MMP_LDR_ENTRY_DATA));
+		MmpGlobalDataPtr->MmpDotNet = (PMMP_DOT_NET_DATA)((LPBYTE)MmpGlobalDataPtr->MmpTls + sizeof(MMP_TLS_DATA));
 
-		MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
-        MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex = FindLdrpModuleBaseAddressIndex();
+		MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
+        MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex = FindLdrpModuleBaseAddressIndex();
 
-		HMODULE hNtdll = (HMODULE)MmpGlobalDataPtr->MmpBaseAddressIndex.NtdllLdrEntry->DllBase;
-		MmpGlobalDataPtr->MmpLdrEntry._RtlRbInsertNodeEx = decltype(&RtlRbInsertNodeEx)(GetProcAddress(hNtdll, "RtlRbInsertNodeEx"));
-		MmpGlobalDataPtr->MmpLdrEntry._RtlRbRemoveNode = decltype(&RtlRbRemoveNode)(GetProcAddress(hNtdll, "RtlRbRemoveNode"));
+		HMODULE hNtdll = (HMODULE)MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry->DllBase;
+		MmpGlobalDataPtr->MmpLdrEntry->_RtlRbInsertNodeEx = decltype(&RtlRbInsertNodeEx)(GetProcAddress(hNtdll, "RtlRbInsertNodeEx"));
+		MmpGlobalDataPtr->MmpLdrEntry->_RtlRbRemoveNode = decltype(&RtlRbRemoveNode)(GetProcAddress(hNtdll, "RtlRbRemoveNode"));
 
-		MmpGlobalDataPtr->MmpLdrEntry.LdrpHashTable = FindLdrpHashTable();
+		MmpGlobalDataPtr->MmpLdrEntry->LdrpHashTable = FindLdrpHashTable();
 
-		MmpGlobalDataPtr->MmpInvertedFunctionTable.LdrpInvertedFunctionTable = FindLdrpInvertedFunctionTable();
+		MmpGlobalDataPtr->MmpInvertedFunctionTable->LdrpInvertedFunctionTable = FindLdrpInvertedFunctionTable();
 
         MmpGlobalDataPtr->MmpFeatures = MEMORY_FEATURE_SUPPORT_VERSION | MEMORY_FEATURE_LDRP_HEAP | MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA | MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY;
-        if (MmpGlobalDataPtr->MmpBaseAddressIndex.LdrpModuleBaseAddressIndex)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_MODULE_BASEADDRESS_INDEX;
-        if (MmpGlobalDataPtr->MmpLdrEntry.LdrpHashTable)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_LDRP_HASH_TABLE;
-        if (MmpGlobalDataPtr->MmpInvertedFunctionTable.LdrpInvertedFunctionTable)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
+        if (MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_MODULE_BASEADDRESS_INDEX;
+        if (MmpGlobalDataPtr->MmpLdrEntry->LdrpHashTable)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_LDRP_HASH_TABLE;
+        if (MmpGlobalDataPtr->MmpInvertedFunctionTable->LdrpInvertedFunctionTable)MmpGlobalDataPtr->MmpFeatures |= MEMORY_FEATURE_INVERTED_FUNCTION_TABLE;
 
 		MmpTlsInitialize();
 
-		MmpGlobalDataPtr->MmpDotNet.Initialized = MmpGlobalDataPtr->MmpDotNet.PreHooked = FALSE;
+		MmpGlobalDataPtr->MmpDotNet->Initialized = MmpGlobalDataPtr->MmpDotNet->PreHooked = FALSE;
 
     } while (false);
 
-    if (!NT_SUCCESS(status) && hSection)NtClose(hSection);
-    RtlFreeUnicodeString(&us);
     return status;
 }
 

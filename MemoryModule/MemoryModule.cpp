@@ -407,7 +407,7 @@ BOOL MemoryFreeLibrary(HMEMORYMODULE mod) {
 	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(mod);
 
 	if (!module) return FALSE;
-	if (module->loadFromNtLoadDllMemory && !module->underUnload)return FALSE;
+	if (module->loadFromLdrLoadDllMemory && !module->underUnload)return FALSE;
 	if (module->hModulesList) {
 		for (DWORD i = 0; i < module->dwModulesCount; ++i) {
 			if (module->hModulesList[i]) {

@@ -110,7 +110,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		ExitProcess(STATUS_INVALID_ADDRESS);
 		TerminateProcess(NtCurrentProcess(), STATUS_INVALID_ADDRESS);
 	}
-	module->loadFromNtLoadDllMemory = true;
+	module->loadFromLdrLoadDllMemory = true;
 
 	headers = RtlImageNtHeader(*BaseAddress);
 	if (headers->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NO_SEH)dwFlags |= LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION;
@@ -144,6 +144,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		if (!NT_SUCCESS(status))break;
 
 		module->MappedDll = true;
+		module->LdrEntry = ModuleEntry;
 
 		status = MemoryResolveImportTable(LPBYTE(*BaseAddress), headers, module);
 		if (!NT_SUCCESS(status))break;
@@ -225,65 +226,69 @@ NTSTATUS NTAPI LdrLoadDllMemoryExA(
 }
 
 NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress) {
-	__try {
-		ProbeForRead(BaseAddress, sizeof(size_t));
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		return GetExceptionCode();
-	}
-	
 	PLDR_DATA_TABLE_ENTRY CurEntry;
 	ULONG count = 0;
 	NTSTATUS status = STATUS_SUCCESS;
 	PMEMORYMODULE module = MapMemoryModuleHandle(BaseAddress);
+	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(BaseAddress);
 
-	//Not a memory module loaded via LdrLoadDllMemory
-	if (!module || !module->loadFromNtLoadDllMemory)return STATUS_INVALID_HANDLE;
+	do {
 
-	//Mapping dll failed
-	if (module->loadFromNtLoadDllMemory && !module->MappedDll) {
-		module->underUnload = true;
-		return MemoryFreeLibrary(BaseAddress) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
-	}
-
-	if (CurEntry = RtlFindLdrTableEntryByHandle(BaseAddress)) {
-		PIMAGE_NT_HEADERS headers = RtlImageNtHeader(BaseAddress);
-		if (headers->OptionalHeader.SizeOfImage == CurEntry->SizeOfImage) {
-			if (module->UseReferenceCount) {
-				status = RtlGetReferenceCount(module, &count);
-				if (!NT_SUCCESS(status))return status;
-			}
-			if (!(count & ~1)) {
-				module->underUnload = true;
-				if (module->initialized) {
-					PLDR_INIT_ROUTINE((LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))(
-						(HINSTANCE)module->codeBase,
-						DLL_PROCESS_DETACH,
-						0
-					);
-				}
-				if (module->MappedDll) {
-					if (module->InsertInvertedFunctionTableEntry) {
-						status = RtlRemoveInvertedFunctionTable(BaseAddress);
-						if (!NT_SUCCESS(status))__fastfail(FAST_FAIL_CORRUPT_LIST_ENTRY);
-					}
-					if (module->TlsHandled) {
-						
-						status = MmpReleaseTlsEntry(CurEntry);
-						if (!NT_SUCCESS(status)) __fastfail(FAST_FAIL_FATAL_APP_EXIT);
-					}
-					if (!RtlFreeLdrDataTableEntry(CurEntry))__fastfail(FAST_FAIL_FATAL_APP_EXIT);
-				}
-				if (!MemoryFreeLibrary(BaseAddress))__fastfail(FAST_FAIL_FATAL_APP_EXIT);
-				return STATUS_SUCCESS;
-			}
-			else {
-				return RtlUpdateReferenceCount(module, FLAG_DEREFERENCE);
-			}
+		//Not a memory module loaded via LdrLoadDllMemory
+		if (!module || !module->loadFromLdrLoadDllMemory) {
+			status = STATUS_INVALID_HANDLE;
+			break;
 		}
-	}
 
-	return STATUS_INVALID_HANDLE;
+		//Mapping dll failed
+		if (!module->MappedDll) {
+			module->underUnload = true;
+			status = (MemoryFreeLibrary(BaseAddress) ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL);
+			break;
+		}
+
+		CurEntry = (PLDR_DATA_TABLE_ENTRY)module->LdrEntry;
+
+		if (headers->OptionalHeader.SizeOfImage != CurEntry->SizeOfImage) __fastfail(FAST_FAIL_FATAL_APP_EXIT);
+
+		if (module->UseReferenceCount) {
+			status = RtlGetReferenceCount(module, &count);
+			if (!NT_SUCCESS(status)) break;
+		}
+
+		if (count & ~1) {
+			status = RtlUpdateReferenceCount(module, FLAG_DEREFERENCE);
+			break;
+		}
+
+		module->underUnload = true;
+		if (module->initialized) {
+			PLDR_INIT_ROUTINE((LPVOID)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))(
+				(HINSTANCE)module->codeBase,
+				DLL_PROCESS_DETACH,
+				0
+				);
+		}
+
+		if (module->MappedDll) {
+			if (module->InsertInvertedFunctionTableEntry) {
+				status = RtlRemoveInvertedFunctionTable(BaseAddress);
+				if (!NT_SUCCESS(status)) __fastfail(FAST_FAIL_CORRUPT_LIST_ENTRY);
+			}
+
+			if (module->TlsHandled) {
+				status = MmpReleaseTlsEntry(CurEntry);
+				if (!NT_SUCCESS(status)) __fastfail(FAST_FAIL_FATAL_APP_EXIT);
+			}
+
+			if (!RtlFreeLdrDataTableEntry(CurEntry)) __fastfail(FAST_FAIL_FATAL_APP_EXIT);
+		}
+
+		if (!MemoryFreeLibrary(BaseAddress)) __fastfail(FAST_FAIL_FATAL_APP_EXIT);
+
+	} while (false);
+
+	return status;
 }
 
 __declspec(noreturn)

@@ -240,10 +240,19 @@ NTSTATUS NTAPI RtlUpdateReferenceCount(
 	_In_ DWORD Flags) {
 	if (Flags != FLAG_REFERENCE && Flags != FLAG_DEREFERENCE)return STATUS_INVALID_PARAMETER_2;
 
-	if (Flags == FLAG_REFERENCE && pModule->dwReferenceCount != 0xffffffff)
+	if (pModule->dwReferenceCount == 0xffffffff)return STATUS_SUCCESS;
+
+	if (PLDR_DATA_TABLE_ENTRY(pModule->LdrEntry)->ObsoleteLoadCount == 0xffff) {
+		pModule->dwReferenceCount = 0xffffffff;
+		return STATUS_SUCCESS;
+	}
+
+	if (Flags == FLAG_REFERENCE) {
 		++pModule->dwReferenceCount;
-	if (Flags == FLAG_DEREFERENCE && pModule->dwReferenceCount)
-		--pModule->dwReferenceCount;
+	}
+	else {
+		if (pModule->dwReferenceCount)--pModule->dwReferenceCount;
+	}
 
 	return STATUS_SUCCESS;
 }
@@ -259,7 +268,7 @@ NTSTATUS NTAPI RtlGetReferenceCount(
 
 VOID NTAPI RtlInsertMemoryTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	PPEB_LDR_DATA PebData = NtCurrentPeb()->Ldr;
-	PLIST_ENTRY LdrpHashTable = MmpGlobalDataPtr->MmpLdrEntry.LdrpHashTable;
+	PLIST_ENTRY LdrpHashTable = MmpGlobalDataPtr->MmpLdrEntry->LdrpHashTable;
 	ULONG i;
 
 	/* Insert into hash table */
@@ -279,15 +288,15 @@ VOID NTAPI RtlRbInsertNodeEx(
 	_Out_ PRTL_BALANCED_NODE Node) {
 	RtlZeroMemory(Node, sizeof(*Node));
 
-	if (!MmpGlobalDataPtr->MmpLdrEntry._RtlRbInsertNodeEx)return;
-	return MmpGlobalDataPtr->MmpLdrEntry._RtlRbInsertNodeEx(Tree, Parent, Right, Node);
+	if (!MmpGlobalDataPtr->MmpLdrEntry->_RtlRbInsertNodeEx)return;
+	return MmpGlobalDataPtr->MmpLdrEntry->_RtlRbInsertNodeEx(Tree, Parent, Right, Node);
 }
 
 VOID NTAPI RtlRbRemoveNode(
 	_In_ PRTL_RB_TREE Tree,
 	_In_ PRTL_BALANCED_NODE Node) {
-	if (!MmpGlobalDataPtr->MmpLdrEntry._RtlRbRemoveNode)return;
-	return MmpGlobalDataPtr->MmpLdrEntry._RtlRbRemoveNode(Tree, Node);
+	if (!MmpGlobalDataPtr->MmpLdrEntry->_RtlRbRemoveNode)return;
+	return MmpGlobalDataPtr->MmpLdrEntry->_RtlRbRemoveNode(Tree, Node);
 }
 
 PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(_In_ PVOID BaseAddress) {

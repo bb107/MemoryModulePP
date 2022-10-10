@@ -27,7 +27,7 @@ typedef struct _MEMORYMODULE {
 		struct {
 			//Status Flags
 			BYTE initialized : 1;
-			BYTE loadFromNtLoadDllMemory : 1;
+			BYTE loadFromLdrLoadDllMemory : 1;
 			BYTE underUnload : 1;
 			BYTE reservedStatusFlags : 5;
 
@@ -52,7 +52,9 @@ typedef struct _MEMORYMODULE {
 	DWORD dwReferenceCount;
 
 	DWORD dwImageFileSize;
-	//DWORD headers_align;				//headers_align == OptionalHeaders.BaseOfCode;
+	DWORD dwReserved;
+
+	PVOID LdrEntry;
 
 } MEMORYMODULE, * PMEMORYMODULE;
 

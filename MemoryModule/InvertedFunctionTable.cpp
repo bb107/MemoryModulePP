@@ -151,7 +151,7 @@ static NTSTATUS RtlProtectMrdata(_In_ ULONG Protect) {
 
 	if (!MrdataBase) {
 		MEMORY_BASIC_INFORMATION mbi{};
-		status = NtQueryVirtualMemory(GetCurrentProcess(), MmpGlobalDataPtr->MmpInvertedFunctionTable.LdrpInvertedFunctionTable, MemoryBasicInformation, &mbi, sizeof(mbi), nullptr);
+		status = NtQueryVirtualMemory(GetCurrentProcess(), MmpGlobalDataPtr->MmpInvertedFunctionTable->LdrpInvertedFunctionTable, MemoryBasicInformation, &mbi, sizeof(mbi), nullptr);
 		if (!NT_SUCCESS(status))return status;
 		MrdataBase = mbi.BaseAddress;
 		size = mbi.RegionSize;
@@ -165,7 +165,7 @@ static NTSTATUS RtlProtectMrdata(_In_ ULONG Protect) {
 NTSTATUS NTAPI RtlInsertInvertedFunctionTable(
 	_In_ PVOID BaseAddress,
 	_In_ ULONG ImageSize) {
-	auto table = PRTL_INVERTED_FUNCTION_TABLE(MmpGlobalDataPtr->MmpInvertedFunctionTable.LdrpInvertedFunctionTable);
+	auto table = PRTL_INVERTED_FUNCTION_TABLE(MmpGlobalDataPtr->MmpInvertedFunctionTable->LdrpInvertedFunctionTable);
 	if (!table)return STATUS_NOT_SUPPORTED;
 	bool need_virtual_protect = RtlIsWindowsVersionOrGreater(6, 3, 0);
 	NTSTATUS status;
@@ -184,7 +184,7 @@ NTSTATUS NTAPI RtlInsertInvertedFunctionTable(
 }
 
 NTSTATUS NTAPI RtlRemoveInvertedFunctionTable(_In_ PVOID ImageBase) {
-	auto table = PRTL_INVERTED_FUNCTION_TABLE(MmpGlobalDataPtr->MmpInvertedFunctionTable.LdrpInvertedFunctionTable);
+	auto table = PRTL_INVERTED_FUNCTION_TABLE(MmpGlobalDataPtr->MmpInvertedFunctionTable->LdrpInvertedFunctionTable);
 	bool need_virtual_protect = RtlIsWindowsVersionOrGreater(6, 3, 0);
 	NTSTATUS status;
 
