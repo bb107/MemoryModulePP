@@ -269,7 +269,7 @@ VOID InitializeWindowsVersion() {
 					}
 				}
 				else {
-					//  [13494, 15063)
+					//  [14393, 15063)
 					version = WINDOWS_VERSION::win10_1;
 					LdrDataTableEntrySize = sizeof(LDR_DATA_TABLE_ENTRY_WIN10_1);
 				}
@@ -415,12 +415,11 @@ NTSTATUS InitializeLockHeld() {
 		MmpGlobalDataPtr->MmpTls = (PMMP_TLS_DATA)((LPBYTE)MmpGlobalDataPtr->MmpLdrEntry + sizeof(MMP_LDR_ENTRY_DATA));
 		MmpGlobalDataPtr->MmpDotNet = (PMMP_DOT_NET_DATA)((LPBYTE)MmpGlobalDataPtr->MmpTls + sizeof(MMP_TLS_DATA));
 
-		MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
+		PLDR_DATA_TABLE_ENTRY pNtdllEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
+		MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry = pNtdllEntry;
         MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex = FindLdrpModuleBaseAddressIndex();
-
-		HMODULE hNtdll = (HMODULE)MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry->DllBase;
-		MmpGlobalDataPtr->MmpLdrEntry->_RtlRbInsertNodeEx = decltype(&RtlRbInsertNodeEx)(GetProcAddress(hNtdll, "RtlRbInsertNodeEx"));
-		MmpGlobalDataPtr->MmpLdrEntry->_RtlRbRemoveNode = decltype(&RtlRbRemoveNode)(GetProcAddress(hNtdll, "RtlRbRemoveNode"));
+		MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbInsertNodeEx = GetProcAddress((HMODULE)pNtdllEntry->DllBase, "RtlRbInsertNodeEx");
+		MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbRemoveNode = GetProcAddress((HMODULE)pNtdllEntry->DllBase, "RtlRbRemoveNode");
 
 		MmpGlobalDataPtr->MmpLdrEntry->LdrpHashTable = FindLdrpHashTable();
 

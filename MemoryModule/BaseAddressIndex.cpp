@@ -1,25 +1,43 @@
 #include "stdafx.h"
 
+VOID RtlRbInsertNodeEx(
+	_In_ PRTL_RB_TREE Tree,
+	_In_ PRTL_BALANCED_NODE Parent,
+	_In_ BOOLEAN Right,
+	_Out_ PRTL_BALANCED_NODE Node) {
+	RtlZeroMemory(Node, sizeof(*Node));
+
+	if (!MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbInsertNodeEx)return;
+	return decltype(&RtlRbInsertNodeEx)(MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbInsertNodeEx)(Tree, Parent, Right, Node);
+}
+
+VOID RtlRbRemoveNode(
+	_In_ PRTL_RB_TREE Tree,
+	_In_ PRTL_BALANCED_NODE Node) {
+	if (!MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbRemoveNode)return;
+	return decltype(&RtlRbRemoveNode)(MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbRemoveNode)(Tree, Node);
+}
+
 NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(
 	_In_ PLDR_DATA_TABLE_ENTRY DataTableEntry,
 	_In_ PVOID BaseAddress) {
 	auto LdrpModuleBaseAddressIndex = MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex;
 	if (!LdrpModuleBaseAddressIndex)return STATUS_UNSUCCESSFUL;
 
-	PLDR_DATA_TABLE_ENTRY_WIN8 LdrNode = decltype(LdrNode)((size_t)LdrpModuleBaseAddressIndex - offsetof(LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode));
+	PLDR_DATA_TABLE_ENTRY_WIN8 LdrNode = CONTAINING_RECORD(LdrpModuleBaseAddressIndex, LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode);
 	bool bRight = false;
-	const auto i = offsetof(LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode);
+
 	while (true) {
 		if (BaseAddress < LdrNode->DllBase) {
 			if (!LdrNode->BaseAddressIndexNode.Left)break;
-			LdrNode = decltype(LdrNode)((size_t)LdrNode->BaseAddressIndexNode.Left - offsetof(LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode));
+			LdrNode = CONTAINING_RECORD(LdrNode->BaseAddressIndexNode.Left, LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode);
 		}
 		else if (BaseAddress > LdrNode->DllBase) {
 			if (!LdrNode->BaseAddressIndexNode.Right) {
 				bRight = true;
 				break;
 			}
-			LdrNode = decltype(LdrNode)((size_t)LdrNode->BaseAddressIndexNode.Right - offsetof(LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode));
+			LdrNode = CONTAINING_RECORD(LdrNode->BaseAddressIndexNode.Right, LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode);
 		}
 		else {
 			LdrNode->DdagNode->LoadCount++;

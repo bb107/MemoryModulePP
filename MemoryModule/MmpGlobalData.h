@@ -4,6 +4,9 @@
 typedef struct _MMP_BASE_ADDRESS_INDEX_DATA {
 	PRTL_RB_TREE LdrpModuleBaseAddressIndex;
 	PLDR_DATA_TABLE_ENTRY NtdllLdrEntry;
+
+	PVOID _RtlRbInsertNodeEx;
+	PVOID _RtlRbRemoveNode;
 }MMP_BASE_ADDRESS_INDEX_DATA, * PMMP_BASE_ADDRESS_INDEX_DATA;
 
 //InvertedFunctionTable.cpp
@@ -14,9 +17,6 @@ typedef struct _MMP_INVERTED_FUNCTION_TABLE_DATA {
 //LdrEntry.cpp
 typedef struct _MMP_LDR_ENTRY_DATA {
 	PLIST_ENTRY LdrpHashTable;
-
-	decltype(&RtlRbInsertNodeEx)_RtlRbInsertNodeEx;
-	decltype(&RtlRbRemoveNode)_RtlRbRemoveNode;
 }MMP_LDR_ENTRY_DATA, * PMMP_LDR_ENTRY_DATA;
 
 //MmpTls.cpp

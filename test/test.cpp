@@ -19,52 +19,89 @@ static PVOID ReadDllFile(LPCSTR FileName) {
 }
 
 int test() {
-    HMODULE hModule;
-    NTSTATUS status;
-    PVOID buffer = ReadDllFile("a.dll");
-    if (!buffer) return 0;
+    LPVOID buffer = ReadDllFile("a.dll");
 
-    status = LdrLoadDllMemoryExW(
-        &hModule,                               // ModuleHandle
-        nullptr,                                // LdrEntry
-        0,                                      // Flags
-        buffer,                                 // Buffer
-        0,                                      // Reserved
-        nullptr,                               // DllBaseName
-        nullptr         // DllFullName
-    );
-    if (NT_SUCCESS(status) && status != STATUS_IMAGE_MACHINE_TYPE_MISMATCH) {
+    HMEMORYMODULE m1 = nullptr, m2 = m1;
+    HMODULE hModule = nullptr;
+    FARPROC pfn = nullptr;
+    DWORD MemoryModuleFeatures = 0;
 
-        typedef int(__stdcall* func)();
-        func test_user32 = (func)GetProcAddress(hModule, "test_user32");
-        test_user32();
+    typedef int(*_exception)(int code);
+    _exception exception = nullptr;
+    HRSRC hRsrc;
+    DWORD SizeofRes;
+    HGLOBAL gRes;
+    char str[10];
 
-        //
-        // After calling MessageBox, we can't free it.
-        // 
-        //LdrUnloadDllMemory(hModule);
+    LdrQuerySystemMemoryModuleFeatures(&MemoryModuleFeatures);
+    if (MemoryModuleFeatures != MEMORY_FEATURE_ALL) {
+        printf("not support all features on this version of windows.\n");
     }
+
+    if (!NT_SUCCESS(LdrLoadDllMemoryExW(&m1, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
+    LoadLibraryW(L"wininet.dll");
+    if (!NT_SUCCESS(LdrLoadDllMemoryExW(&m2, nullptr, 0, buffer, 0, L"kernel128", nullptr))) goto end;
+
+    //forward export
+    hModule = (HMODULE)m1;
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket")); //ws2_32.WSASocketW
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "VerifyTruse")); //wintrust.WinVerifyTrust
+    hModule = (HMODULE)m2;
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket"));
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "VerifyTruse"));
+
+    //exception
+    hModule = (HMODULE)m1;
+    exception = (_exception)GetProcAddress(hModule, "exception");
+    if (exception) {
+        for (int i = 0; i < 5; ++i)exception(i);
+    }
+
+    //tls
+    pfn = GetProcAddress(hModule, "thread");
+    if (pfn && pfn()) {
+        printf("thread test failed.\n");
+    }
+
+    //resource
+    if (!LoadStringA(hModule, 101, str, 10)) {
+        printf("load string failed.\n");
+    }
+    else {
+        printf("%s\n", str);
+    }
+    if (!(hRsrc = FindResourceA(hModule, MAKEINTRESOURCEA(102), "BINARY"))) {
+        printf("find binary resource failed.\n");
+    }
+    else {
+        if ((SizeofRes = SizeofResource(hModule, hRsrc)) != 0x10) {
+            printf("invalid res size.\n");
+        }
+        else {
+            if (!(gRes = LoadResource(hModule, hRsrc))) {
+                printf("load res failed.\n");
+            }
+            else {
+                if (!LockResource(gRes))printf("lock res failed.\n");
+                else {
+                    printf("resource test success.\n");
+                }
+            }
+        }
+    }
+
+end:
+    delete[]buffer;
+    if (m1)LdrUnloadDllMemory(m1);
+    FreeLibrary(LoadLibraryW(L"wininet.dll"));
+    FreeLibrary(GetModuleHandleW(L"wininet.dll"));
+    if (m2)LdrUnloadDllMemory(m2);
 
     return 0;
 }
 
 int main() {
-    if (MmpGlobalDataPtr->WindowsVersion == WINDOWS_VERSION::win11) {
-        auto head = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
-        auto entry = head->Flink;
-        while (entry != head) {
-            PLDR_DATA_TABLE_ENTRY_WIN11 __entry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY_WIN11, InLoadOrderLinks);
-            wprintf(L"%s\t0x%08X, 0x%08X, 0x%p, %d\n",
-                __entry->BaseDllName.Buffer,
-                __entry->CheckSum,
-                RtlImageNtHeader(__entry->DllBase)->OptionalHeader.CheckSum,
-                __entry->ActivePatchImageBase,
-                __entry->HotPatchState
-            );
-
-            entry = entry->Flink;
-        }
-    }
+    test();
 
     return 0;
 }

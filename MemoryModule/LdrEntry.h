@@ -62,18 +62,6 @@ PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(_In_z_ PCWSTR BaseNam
 #define LDR_GET_HASH_ENTRY(x)		(RtlUpcaseUnicodeChar((x)) & (LDR_HASH_TABLE_ENTRIES - 1))
 #define LDR_HASH_TABLE_ENTRIES		32
 
-VOID NTAPI RtlRbInsertNodeEx(
-	_In_ PRTL_RB_TREE Tree,
-	_In_ PRTL_BALANCED_NODE Parent,
-	_In_ BOOLEAN Right,
-	_Out_ PRTL_BALANCED_NODE Node
-);
-
-VOID NTAPI RtlRbRemoveNode(
-	_In_ PRTL_RB_TREE Tree,
-	_In_ PRTL_BALANCED_NODE Node
-);
-
 struct _LDR_DDAG_NODE_WIN8 {
 	_LIST_ENTRY Modules;							                        //0x0
 	_LDR_SERVICE_TAG_RECORD* ServiceTagList;				                //0x10

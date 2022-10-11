@@ -281,24 +281,6 @@ VOID NTAPI RtlInsertMemoryTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	InsertTailList(&PebData->InInitializationOrderModuleList, &LdrEntry->InInitializationOrderLinks);
 }
 
-VOID NTAPI RtlRbInsertNodeEx(
-	_In_ PRTL_RB_TREE Tree,
-	_In_ PRTL_BALANCED_NODE Parent,
-	_In_ BOOLEAN Right,
-	_Out_ PRTL_BALANCED_NODE Node) {
-	RtlZeroMemory(Node, sizeof(*Node));
-
-	if (!MmpGlobalDataPtr->MmpLdrEntry->_RtlRbInsertNodeEx)return;
-	return MmpGlobalDataPtr->MmpLdrEntry->_RtlRbInsertNodeEx(Tree, Parent, Right, Node);
-}
-
-VOID NTAPI RtlRbRemoveNode(
-	_In_ PRTL_RB_TREE Tree,
-	_In_ PRTL_BALANCED_NODE Node) {
-	if (!MmpGlobalDataPtr->MmpLdrEntry->_RtlRbRemoveNode)return;
-	return MmpGlobalDataPtr->MmpLdrEntry->_RtlRbRemoveNode(Tree, Node);
-}
-
 PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByHandle(_In_ PVOID BaseAddress) {
 	PLIST_ENTRY ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList, ListEntry = ListHead->Flink;
 	PLDR_DATA_TABLE_ENTRY CurEntry;
