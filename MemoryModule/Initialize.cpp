@@ -3,13 +3,6 @@
 
 PMMP_GLOBAL_DATA MmpGlobalDataPtr;
 
-BOOLEAN MmpBuildSectionName(_Out_ PUNICODE_STRING SectionName) {
-	WCHAR buffer[128];
-
-	swprintf_s(buffer, L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%08X", NtCurrentPeb()->SessionId, (unsigned int)(ULONG_PTR)NtCurrentProcessId());
-	return RtlCreateUnicodeString(SectionName, buffer);
-}
-
 PRTL_RB_TREE FindLdrpModuleBaseAddressIndex() {
     PRTL_RB_TREE LdrpModuleBaseAddressIndex = nullptr;
     PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry);
@@ -297,60 +290,41 @@ VOID InitializeWindowsVersion() {
 }
 
 NTSTATUS MmpAllocateGlobalData() {
-	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	NTSTATUS status;
 	HANDLE hSection = nullptr;
 	OBJECT_ATTRIBUTES oa;
 	LARGE_INTEGER li;
 	UNICODE_STRING us{};
+	PVOID BaseAddress = 0;
+	SIZE_T ViewSize = 0;
+	WCHAR buffer[128];
+
+	swprintf_s(
+		buffer,
+		L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%08X",
+		NtCurrentPeb()->SessionId,
+		(unsigned int)(ULONG_PTR)NtCurrentProcessId()
+	);
+
+	RtlInitUnicodeString(&us, buffer);
+	InitializeObjectAttributes(&oa, &us, 0, nullptr, nullptr);
 
 	li.QuadPart = 0x1000;
 
-	do {
-
-		if (!MmpBuildSectionName(&us))break;
-
-		InitializeObjectAttributes(&oa, &us, 0, nullptr, nullptr);
-
-		status = NtCreateSection(
-			&hSection,
-			SECTION_ALL_ACCESS,
-			&oa,
-			&li,
-			PAGE_READWRITE,
-			SEC_COMMIT | SEC_BASED,
-			nullptr
-		);
-		if (!NT_SUCCESS(status)) {
-			if (status != STATUS_OBJECT_NAME_COLLISION) break;
-
-			HANDLE hSection2;
-			status = NtOpenSection(
-				&hSection2,
-				SECTION_ALL_ACCESS,
-				&oa
-			);
-			if (!NT_SUCCESS(status))break;
-
-			SECTION_BASIC_INFORMATION sbi{};
-			status = NtQuerySection(
-				hSection2,
-				SECTION_INFORMATION_CLASS::SectionBasicInformation,
-				&sbi,
-				sizeof(sbi),
-				nullptr
-			);
-
-			NtClose(hSection2);
-			MmpGlobalDataPtr = (PMMP_GLOBAL_DATA)sbi.BaseAddress;
-			break;
-		}
-
-		PVOID BaseAddress = 0;
-		SIZE_T ViewSize = 0;
+	status = NtCreateSection(
+		&hSection,
+		SECTION_ALL_ACCESS,
+		&oa,
+		&li,
+		PAGE_READWRITE,
+		SEC_COMMIT,
+		nullptr
+	);
+	if (NT_SUCCESS(status)) {
 		status = NtMapViewOfSection(
 			hSection,
 			NtCurrentProcess(),
-			&BaseAddress,
+			(PVOID*)&MmpGlobalDataPtr,
 			0,
 			0,
 			nullptr,
@@ -359,19 +333,44 @@ NTSTATUS MmpAllocateGlobalData() {
 			0,
 			PAGE_READWRITE
 		);
-		if (!NT_SUCCESS(status))break;
 
-		MmpGlobalDataPtr = (PMMP_GLOBAL_DATA)BaseAddress;
-
-	} while (false);
-
-	RtlFreeUnicodeString(&us);
-
-	if (NT_SUCCESS(status)) {
-		status = hSection ? status : STATUS_ALREADY_INITIALIZED;
+		if (!NT_SUCCESS(status)) {
+			NtClose(hSection);
+		}
 	}
 	else {
-		if (hSection)NtClose(hSection);
+		if (status == STATUS_OBJECT_NAME_COLLISION) {
+			status = NtOpenSection(
+				&hSection,
+				SECTION_ALL_ACCESS,
+				&oa
+			);
+
+			if (NT_SUCCESS(status)) {
+				status = NtMapViewOfSection(
+					hSection,
+					NtCurrentProcess(),
+					&BaseAddress,
+					0,
+					0,
+					nullptr,
+					&ViewSize,
+					ViewUnmap,
+					0,
+					PAGE_READONLY
+				);
+				
+				NtClose(hSection);
+
+				if (NT_SUCCESS(status)) {
+					MmpGlobalDataPtr = (PMMP_GLOBAL_DATA)((PMMP_GLOBAL_DATA)BaseAddress)->BaseAddress;
+					NtUnmapViewOfSection(NtCurrentProcess(), BaseAddress);
+
+					status = STATUS_ALREADY_INITIALIZED;
+				}
+
+			}
+		}
 	}
 
 	return status;
@@ -399,6 +398,7 @@ NTSTATUS InitializeLockHeld() {
 
         MmpGlobalDataPtr->MajorVersion = MEMORY_MODULE_MAJOR_VERSION;
         MmpGlobalDataPtr->MinorVersion = MEMORY_MODULE_MINOR_VERSION;
+		MmpGlobalDataPtr->BaseAddress = MmpGlobalDataPtr;
 
 		GetSystemInfo(&MmpGlobalDataPtr->SystemInfo);
 

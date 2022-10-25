@@ -108,6 +108,8 @@ typedef struct _MMP_GLOBAL_DATA {
 
 	PMMP_DOT_NET_DATA MmpDotNet;
 
+	PVOID BaseAddress;
+
 }MMP_GLOBAL_DATA, * PMMP_GLOBAL_DATA;
 
 #define MMP_GLOBAL_DATA_SIZE (\
