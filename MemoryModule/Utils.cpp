@@ -159,7 +159,7 @@ SIZE_T NTAPI _RtlCompareMemory(
 	const VOID* Source1,
 	const VOID* Source2,
 	SIZE_T     Length) {
-	return decltype(&_RtlCompareMemory)(RtlGetNtProcAddress("RtlCompareMemory"))(Source1, Source2, Length);
+	return decltype(&_RtlCompareMemory)(GetProcAddress((HMODULE)MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry->DllBase,"RtlCompareMemory"))(Source1, Source2, Length);
 }
 #define RtlCompareMemory _RtlCompareMemory
 #endif

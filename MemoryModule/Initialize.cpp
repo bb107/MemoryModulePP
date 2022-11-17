@@ -291,19 +291,20 @@ VOID InitializeWindowsVersion() {
 
 NTSTATUS MmpAllocateGlobalData() {
 	NTSTATUS status;
-	HANDLE hSection = nullptr;
 	OBJECT_ATTRIBUTES oa;
 	LARGE_INTEGER li;
+	WCHAR buffer[128];
+	HANDLE hSection = nullptr;
 	UNICODE_STRING us{};
 	PVOID BaseAddress = 0;
 	SIZE_T ViewSize = 0;
-	WCHAR buffer[128];
+	PTEB teb = NtCurrentTeb();
 
 	swprintf_s(
 		buffer,
-		L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%08X",
+		L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%p",
 		NtCurrentPeb()->SessionId,
-		(unsigned int)(ULONG_PTR)NtCurrentProcessId()
+		(PVOID)(~(ULONG_PTR)teb->ClientId.UniqueProcess ^ (ULONG_PTR)teb->ProcessEnvironmentBlock->ProcessHeap)
 	);
 
 	RtlInitUnicodeString(&us, buffer);

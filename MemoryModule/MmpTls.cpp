@@ -194,8 +194,9 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
 
             PTLS_ENTRY tls = CONTAINING_RECORD(entry, TLS_ENTRY, TlsEntryLinks);
             auto len = tls->TlsDirectory.EndAddressOfRawData - tls->TlsDirectory.StartAddressOfRawData;
-            PVOID data = RtlAllocateHeap(RtlProcessHeap(), 0, len);
-            if (!len) {
+            PVOID data = len ? RtlAllocateHeap(RtlProcessHeap(), 0, len) : nullptr;
+            if (!data) {
+                RtlFreeHeap(RtlProcessHeap(), 0, data);
                 success = false;
                 break;
             }

@@ -1,6 +1,6 @@
 #include "stdafx.h"
 
-VOID RtlRbInsertNodeEx(
+VOID NTAPI RtlRbInsertNodeEx(
 	_In_ PRTL_RB_TREE Tree,
 	_In_ PRTL_BALANCED_NODE Parent,
 	_In_ BOOLEAN Right,
@@ -11,7 +11,7 @@ VOID RtlRbInsertNodeEx(
 	return decltype(&RtlRbInsertNodeEx)(MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbInsertNodeEx)(Tree, Parent, Right, Node);
 }
 
-VOID RtlRbRemoveNode(
+VOID NTAPI RtlRbRemoveNode(
 	_In_ PRTL_RB_TREE Tree,
 	_In_ PRTL_BALANCED_NODE Node) {
 	if (!MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbRemoveNode)return;
