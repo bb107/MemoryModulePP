@@ -1,28 +1,18 @@
 #pragma once
 
 typedef struct _SEARCH_CONTEXT {
-	union {
-		IN PVOID  MemoryBuffer;
-		size_t InBufferPtr;
-	};
-	union {
-		IN DWORD BufferLength;
-		size_t reserved0;
-	};
 
-	union {
-		OUT PVOID  MemoryBlockInSection;
-		size_t OutBufferPtr;
-	};
-	union {
-		DWORD RemainingLength;
-		size_t reserved1;
-	};
+	IN LPBYTE SearchPattern;
+	IN SIZE_T PatternSize;
+
+	OUT LPBYTE Result;
+	SIZE_T MemoryBlockSize;
+
 }SEARCH_CONTEXT, * PSEARCH_CONTEXT;
 
 NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
-	_In_ HMODULE hModule,
-	_In_ LPCSTR lpSectionName,
+	_In_ HMODULE ModuleHandle,
+	_In_ LPCSTR SectionName,
 	_Inout_ PSEARCH_CONTEXT SearchContext
 );
 

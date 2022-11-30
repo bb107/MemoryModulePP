@@ -159,68 +159,96 @@ SIZE_T NTAPI _RtlCompareMemory(
 	const VOID* Source1,
 	const VOID* Source2,
 	SIZE_T     Length) {
-	return decltype(&_RtlCompareMemory)(GetProcAddress((HMODULE)MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry->DllBase,"RtlCompareMemory"))(Source1, Source2, Length);
+	return decltype(&_RtlCompareMemory)(GetProcAddress((HMODULE)MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry->DllBase, "RtlCompareMemory"))(Source1, Source2, Length);
 }
 #define RtlCompareMemory _RtlCompareMemory
 #endif
 
 NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
-	_In_ HMODULE hModule,
-	_In_ LPCSTR lpSectionName,
+	_In_ HMODULE ModuleHandle,
+	_In_ LPCSTR SectionName,
 	_Inout_ PSEARCH_CONTEXT SearchContext) {
 
 	NTSTATUS status = STATUS_SUCCESS;
-	size_t begin = 0, buffer = 0;
-	DWORD Length = 0, bufferLength = 0;
 
 	__try {
-		begin = SearchContext->OutBufferPtr;
-		Length = SearchContext->RemainingLength;
-		buffer = SearchContext->InBufferPtr;
-		bufferLength = SearchContext->BufferLength;
-		if (!buffer || !bufferLength) {
-			SearchContext->OutBufferPtr = 0;
-			SearchContext->RemainingLength = 0;
-			return STATUS_INVALID_PARAMETER;
+
+		//
+		// checks if no search pattern and length are provided
+		//
+
+		if (!SearchContext->SearchPattern || !SearchContext->PatternSize) {
+			SearchContext->Result = nullptr;
+			SearchContext->MemoryBlockSize = 0;
+
+			status = STATUS_INVALID_PARAMETER;
+			__leave;
 		}
-		if (!begin) {
-			PIMAGE_NT_HEADERS headers = RtlImageNtHeader(hModule);
-			PIMAGE_SECTION_HEADER section = nullptr;
-			if (!headers)return STATUS_INVALID_PARAMETER_1;
-			section = IMAGE_FIRST_SECTION(headers);
-			for (WORD i = 0; i < headers->FileHeader.NumberOfSections; ++i) {
-				if (!_strnicmp(lpSectionName, (LPCSTR)section->Name, 8)) {
-					begin = SearchContext->OutBufferPtr = (size_t)hModule + section->VirtualAddress;
-					Length = SearchContext->RemainingLength = section->Misc.VirtualSize;
-					break;
-				}
-				++section;
-			}
-			if (!begin || !Length || Length < bufferLength) {
-				SearchContext->OutBufferPtr = 0;
-				SearchContext->RemainingLength = 0;
-				return STATUS_NOT_FOUND;
-			}
+
+		if (SearchContext->Result) {
+			++SearchContext->Result;
+			--SearchContext->MemoryBlockSize;
 		}
 		else {
-			begin++;
-			Length--;
-		}
-		status = STATUS_NOT_FOUND;
-		for (DWORD i = 0; i < Length - bufferLength; ++begin, ++i) {
-			if (RtlCompareMemory((PVOID)begin, (PVOID)buffer, bufferLength) == bufferLength) {
-				SearchContext->OutBufferPtr = begin;
-				--SearchContext->RemainingLength;
-				return STATUS_SUCCESS;
+
+			//
+			// if it is the first search, find the length and start address of the specified section
+			//
+
+			PIMAGE_NT_HEADERS headers = RtlImageNtHeader(ModuleHandle);
+			PIMAGE_SECTION_HEADER section = nullptr;
+
+			if (headers) {
+				section = IMAGE_FIRST_SECTION(headers);
+				for (WORD i = 0; i < headers->FileHeader.NumberOfSections; ++i) {
+					if (!_strnicmp(SectionName, (LPCSTR)section->Name, 8)) {
+						SearchContext->Result = (LPBYTE)ModuleHandle + section->VirtualAddress;
+						SearchContext->MemoryBlockSize = section->Misc.VirtualSize;
+						break;
+					}
+
+					++section;
+				}
+
+				if (!SearchContext->Result || !SearchContext->MemoryBlockSize || SearchContext->MemoryBlockSize < SearchContext->PatternSize) {
+					SearchContext->Result = nullptr;
+					SearchContext->MemoryBlockSize = 0;
+					status = STATUS_NOT_FOUND;
+					__leave;
+				}
+			}
+			else {
+				status = STATUS_INVALID_PARAMETER_1;
+				__leave;
 			}
 		}
+
+		//
+		// perform a linear search on the pattern
+		//
+
+		LPBYTE end = SearchContext->Result + SearchContext->MemoryBlockSize - SearchContext->PatternSize;
+		while (SearchContext->Result <= end) {
+			if (RtlCompareMemory(SearchContext->SearchPattern, SearchContext->Result, SearchContext->PatternSize) == SearchContext->PatternSize) {
+				__leave;
+			}
+
+			++SearchContext->Result;
+			--SearchContext->MemoryBlockSize;
+		}
+
+		//
+		// if the search fails, clear the output parameters
+		//
+
+		SearchContext->Result = nullptr;
+		SearchContext->MemoryBlockSize = 0;
+		status = STATUS_NOT_FOUND;
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();
 	}
 
-	SearchContext->OutBufferPtr = 0;
-	SearchContext->RemainingLength = 0;
 	return status;
 }
 

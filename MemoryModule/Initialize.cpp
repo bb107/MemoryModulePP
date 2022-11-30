@@ -15,11 +15,11 @@ PRTL_RB_TREE FindLdrpModuleBaseAddressIndex() {
         BYTE count = 0;
         PRTL_RB_TREE tmp = nullptr;
         SEARCH_CONTEXT SearchContext{};
-        SearchContext.MemoryBuffer = &node;
-        SearchContext.BufferLength = sizeof(size_t);
+        SearchContext.SearchPattern = (LPBYTE)&node;
+        SearchContext.PatternSize = sizeof(size_t);
         while (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection((HMODULE)nt10->DllBase, ".data", &SearchContext))) {
             if (count++)return nullptr;
-            tmp = (decltype(tmp))SearchContext.MemoryBlockInSection;
+            tmp = (decltype(tmp))SearchContext.Result;
         }
         if (count && tmp && tmp->Root && tmp->Min) {
             LdrpModuleBaseAddressIndex = tmp;
@@ -56,7 +56,7 @@ PVOID FindLdrpInvertedFunctionTable32() {
 	PIMAGE_NT_HEADERS NtdllHeaders = RtlImageNtHeader(hNtdll), ModuleHeaders = nullptr;
 	_RTL_INVERTED_FUNCTION_TABLE_ENTRY_WIN7_32 entry{};
 	LPCSTR lpSectionName = ".data";
-	SEARCH_CONTEXT SearchContext{ SearchContext.MemoryBuffer = &entry,SearchContext.BufferLength = sizeof(entry) };
+	SEARCH_CONTEXT SearchContext{ SearchContext.SearchPattern = (LPBYTE)&entry,SearchContext.PatternSize = sizeof(entry) };
 	PLIST_ENTRY ListHead = &NtCurrentPeb()->Ldr->InMemoryOrderModuleList,
 		ListEntry = ListHead->Flink;
 	PLDR_DATA_TABLE_ENTRY CurEntry = nullptr;
@@ -81,7 +81,7 @@ PVOID FindLdrpInvertedFunctionTable32() {
 	entry = { RtlEncodeSystemPointer((PVOID)SEHTable),(DWORD)hModule,ModuleHeaders->OptionalHeader.SizeOfImage,(PVOID)SEHCount };
 
 	while (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(hNtdll, lpSectionName, &SearchContext))) {
-		PRTL_INVERTED_FUNCTION_TABLE_WIN7_32 tab = decltype(tab)(SearchContext.OutBufferPtr - Offset);
+		PRTL_INVERTED_FUNCTION_TABLE_WIN7_32 tab = decltype(tab)(SearchContext.Result - Offset);
 
 		//Note: Same memory layout for RTL_INVERTED_FUNCTION_TABLE_ENTRY in Windows 10 x86 and x64.
 		if (RtlIsWindowsVersionOrGreater(6, 2, 0) && tab->MaxCount == 0x200 && !tab->NextEntrySEHandlerTableEncoded) return tab;
@@ -111,7 +111,7 @@ PVOID FindLdrpInvertedFunctionTable64() {
 	_RTL_INVERTED_FUNCTION_TABLE_ENTRY_64 entry{};
 	LPCSTR lpSectionName = ".data";
 	PIMAGE_DATA_DIRECTORY dir = nullptr;
-	SEARCH_CONTEXT SearchContext{ SearchContext.MemoryBuffer = &entry,SearchContext.BufferLength = sizeof(entry) };
+	SEARCH_CONTEXT SearchContext{ SearchContext.SearchPattern = (LPBYTE)&entry,SearchContext.PatternSize = sizeof(entry) };
 
 	//Windows 8
 	if (RtlVerifyVersion(6, 2, 0, RTL_VERIFY_FLAGS_MAJOR_VERSION | RTL_VERIFY_FLAGS_MINOR_VERSION)) {
@@ -147,7 +147,7 @@ PVOID FindLdrpInvertedFunctionTable64() {
 	};
 
 	while (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(hNtdll, lpSectionName, &SearchContext))) {
-		PRTL_INVERTED_FUNCTION_TABLE_64 tab = decltype(tab)(SearchContext.OutBufferPtr - 0x10);
+		PRTL_INVERTED_FUNCTION_TABLE_64 tab = decltype(tab)(SearchContext.Result - 0x10);
 		if (RtlIsWindowsVersionOrGreater(6, 2, 0) && tab->MaxCount == 0x200 && !tab->Overflow) return tab;
 		else if (tab->MaxCount == 0x200 && !tab->Epoch) return tab;
 	}
