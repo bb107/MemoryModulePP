@@ -310,13 +310,26 @@ PLDR_DATA_TABLE_ENTRY NTAPI RtlFindLdrTableEntryByBaseName(_In_z_ PCWSTR BaseNam
 
 ULONG NTAPI LdrHashEntry(_In_ UNICODE_STRING& DllBaseName, _In_ BOOL ToIndex) {
 	ULONG result = 0;
-	if (RtlIsWindowsVersionOrGreater(6, 2, 0)) {
-		RtlHashUnicodeString(&DllBaseName, TRUE, HASH_STRING_ALGORITHM_DEFAULT, &result);
-	}
-	else {
+
+	switch (MmpGlobalDataPtr->WindowsVersion) {
+	case WINDOWS_VERSION::xp:
+		result = RtlUpcaseUnicodeChar(DllBaseName.Buffer[0]) - 'A';
+		break;
+
+	case WINDOWS_VERSION::vista:
+		result = RtlUpcaseUnicodeChar(DllBaseName.Buffer[0]) - 1;
+		break;
+
+	case WINDOWS_VERSION::win7:
 		for (USHORT i = 0; i < (DllBaseName.Length / sizeof(wchar_t)); ++i)
 			result += 0x1003F * RtlUpcaseUnicodeChar(DllBaseName.Buffer[i]);
+		break;
+
+	default:
+		RtlHashUnicodeString(&DllBaseName, TRUE, HASH_STRING_ALGORITHM_DEFAULT, &result);
+		break;
 	}
+
 	if (ToIndex)result &= (LDR_HASH_TABLE_ENTRIES - 1);
 	return result;
 }
