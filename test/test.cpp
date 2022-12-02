@@ -18,6 +18,21 @@ static PVOID ReadDllFile(LPCSTR FileName) {
     return buffer;
 }
 
+static void DisplayStatus() {
+    printf(
+        "MemoryModulePP [Version %d.%d]\n\n\tMmpFeatures = %08X\n\n\tLdrpModuleBaseAddressIndex = %p\n\tNtdllLdrEntry = %p\n\tRtlRbInsertNodeEx = %p\n\tRtlRbRemoveNode = %p\n\n\tLdrpInvertedFunctionTable = %p\n\n\tLdrpHashTable = %p\n\n",
+        MmpGlobalDataPtr->MajorVersion,
+        MmpGlobalDataPtr->MinorVersion,
+        MmpGlobalDataPtr->MmpFeatures,
+        MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex,
+        MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry,
+        MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbInsertNodeEx,
+        MmpGlobalDataPtr->MmpBaseAddressIndex->_RtlRbRemoveNode,
+        MmpGlobalDataPtr->MmpInvertedFunctionTable->LdrpInvertedFunctionTable,
+        MmpGlobalDataPtr->MmpLdrEntry->LdrpHashTable
+    );
+}
+
 int test() {
     LPVOID buffer = ReadDllFile("a.dll");
 
@@ -101,6 +116,8 @@ end:
 }
 
 int main() {
+    DisplayStatus();
+
     test();
 
     return 0;

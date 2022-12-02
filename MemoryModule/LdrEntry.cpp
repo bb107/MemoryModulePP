@@ -197,6 +197,7 @@ BOOL NTAPI RtlInitializeLdrDataTableEntry(
 BOOL NTAPI RtlFreeLdrDataTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	HANDLE heap = NtCurrentPeb()->ProcessHeap;
 	switch (MmpGlobalDataPtr->WindowsVersion) {
+	case WINDOWS_VERSION::win11:
 	case WINDOWS_VERSION::win10:
 	case WINDOWS_VERSION::win10_1:
 	case WINDOWS_VERSION::win10_2:

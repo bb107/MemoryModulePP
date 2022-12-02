@@ -158,22 +158,53 @@ PVOID FindLdrpInvertedFunctionTable64() {
 #define FindLdrpInvertedFunctionTable FindLdrpInvertedFunctionTable64
 #endif
 
-PLIST_ENTRY FindLdrpHashTable() {
-	PLIST_ENTRY list = nullptr;
-	PLIST_ENTRY head = &NtCurrentPeb()->Ldr->InInitializationOrderModuleList, entry = head->Flink;
-	PLDR_DATA_TABLE_ENTRY CurEntry = nullptr;
-	while (head != entry) {
-		CurEntry = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, LDR_DATA_TABLE_ENTRY::InInitializationOrderLinks);
-		entry = entry->Flink;
-		if (CurEntry->HashLinks.Flink == &CurEntry->HashLinks)continue;
-		list = CurEntry->HashLinks.Flink;
-		if (list->Flink == &CurEntry->HashLinks) {
-			list = (decltype(list))((size_t)CurEntry->HashLinks.Flink - LdrHashEntry(CurEntry->BaseDllName) * sizeof(_LIST_ENTRY));
-			break;
+BOOL IsValidLdrpHashTable(PLIST_ENTRY LdrpHashTable) {
+
+	//
+	// Additional checks are performed to ensure that the LdrpHashTable is valid.
+	//
+
+	__try {
+
+		for (ULONG i = 0; i < LDR_HASH_TABLE_ENTRIES; ++i) {
+			PLIST_ENTRY head = &LdrpHashTable[i], entry = head->Flink;
+
+			while (head != entry) {
+				PLDR_DATA_TABLE_ENTRY current = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, LDR_DATA_TABLE_ENTRY::HashLinks);
+
+				if (LdrHashEntry(current->BaseDllName) != i) {
+					return FALSE;
+				}
+
+				entry = entry->Flink;
+			}
 		}
-		list = nullptr;
+
+		return TRUE;
 	}
-	return list;
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return FALSE;
+	}
+
+}
+
+PLIST_ENTRY FindLdrpHashTable() {
+	PLIST_ENTRY head = &NtCurrentPeb()->Ldr->InInitializationOrderModuleList, entry = head->Flink;
+
+	while (head != entry) {
+		PLDR_DATA_TABLE_ENTRY current = CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, LDR_DATA_TABLE_ENTRY::InInitializationOrderLinks);
+		PLIST_ENTRY hashEntry = &current->HashLinks;
+
+		if (hashEntry->Flink != hashEntry && hashEntry->Flink->Flink == hashEntry) {
+			PLIST_ENTRY table = &hashEntry->Flink[-(LONG)LdrHashEntry(current->BaseDllName)];
+
+			return IsValidLdrpHashTable(table) ? table : nullptr;
+		}
+
+		entry = entry->Flink;
+	}
+
+	return nullptr;
 }
 
 VOID InitializeWindowsVersion() {
