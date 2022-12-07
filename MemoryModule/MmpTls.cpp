@@ -164,11 +164,13 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
         if (record->TlspMmpBlock) {
 
             auto size = CONTAINING_RECORD(record->TlspLdrBlock, TLS_VECTOR, ModuleTlsData)->Length;
-            RtlCopyMemory(
-                record->TlspMmpBlock,
-                record->TlspLdrBlock,
-                size * sizeof(PVOID)
-            );
+            if ((HANDLE)(ULONG_PTR)size != NtCurrentThreadId()) {
+                RtlCopyMemory(
+                    record->TlspMmpBlock,
+                    record->TlspLdrBlock,
+                    size * sizeof(PVOID)
+                );
+            }
 
             NtCurrentTeb()->ThreadLocalStoragePointer = record->TlspMmpBlock;
 
@@ -397,7 +399,7 @@ BOOL NTAPI PreHookNtSetInformationProcess() {
 
         ProcessTlsInformation->OperationType = ProcessTlsReplaceVector;
         ProcessTlsInformation->Reserved = 0;
-        ProcessTlsInformation->TlsVectorLength = CurrentTlsPointerSize;
+        ProcessTlsInformation->TlsVectorLength = (HANDLE)(ULONG_PTR)CurrentTlsPointerSize == NtCurrentThreadId() ? 0 : CurrentTlsPointerSize;
         ProcessTlsInformation->ThreadDataCount = CurrentThreadCount;
 
         for (DWORD i = 0; i < CurrentThreadCount; ++i) {
@@ -784,7 +786,7 @@ NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
 BOOL NTAPI MmpTlsInitialize() {
 
     auto tls = CONTAINING_RECORD(NtCurrentTeb()->ThreadLocalStoragePointer, TLS_VECTOR, TLS_VECTOR::ModuleTlsData);
-    if (tls && tls->Length > MMP_START_TLS_INDEX) {
+    if (tls && (HANDLE)(ULONG_PTR)tls->Length != NtCurrentThreadId() && tls->Length > MMP_START_TLS_INDEX) {
         RtlRaiseStatus(STATUS_NOT_SUPPORTED);
         return FALSE;
     }

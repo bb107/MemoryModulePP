@@ -11,3 +11,5 @@ LdrLoadDllMemoryExW
 LdrUnloadDllMemory
 LdrUnloadDllMemoryAndExitThread
 LdrQuerySystemMemoryModuleFeatures
+
+MmpGlobalDataPtr
