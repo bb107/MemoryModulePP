@@ -347,7 +347,11 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
         entry = entry->Flink;
     }
 
-    --MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount;
+    if (record) {
+        --MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount;
+    }
+
+    assert(0 < (int)MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount);
 
     LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
 
@@ -371,7 +375,7 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
     }
     else {
         if (MmpGlobalDataPtr->MmpTls->MmpTlsList.Flink != &MmpGlobalDataPtr->MmpTls->MmpTlsList) {
-            assert(false);
+            assert(NtCurrentTeb()->ThreadLocalStoragePointer == nullptr);
         }
     }
 

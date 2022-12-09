@@ -1,4 +1,5 @@
 #include "../MemoryModule/stdafx.h"
+#include "../MemoryModule/LoadDllMemoryApi.h"
 #include <cstdio>
 
 static PVOID ReadDllFile(LPCSTR FileName) {
@@ -115,10 +116,22 @@ end:
     return 0;
 }
 
-int main() {
-    DisplayStatus();
+void test_uef() {
+    auto buffer = ReadDllFile("a.dll");
 
-    test();
+    HMODULE hm = LoadLibraryMemory(buffer);
+    auto pfn = GetProcAddress(hm, "unhandled_exception");
+
+    auto result = pfn();
+    if (result == 1234) {
+        printf("mmpp success\n");
+    }
+
+    return;
+}
+
+int main() {
+    test_uef();
 
     return 0;
 }

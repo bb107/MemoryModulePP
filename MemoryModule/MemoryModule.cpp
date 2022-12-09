@@ -239,7 +239,7 @@ NTSTATUS MemoryLoadLibrary(
 		LPVOID(old_header->OptionalHeader.ImageBase),
 		old_header->OptionalHeader.SizeOfImage,
 		MEM_RESERVE,
-		PAGE_READWRITE
+		PAGE_EXECUTE_READWRITE
 	);
 	if (!base) {
 		if (old_header->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) {
