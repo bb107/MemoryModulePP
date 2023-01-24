@@ -258,7 +258,7 @@ NTSTATUS NTAPI RtlFindMemoryBlockFromModuleSection(
 #endif
 
 
-static __forceinline WORD CalcCheckSum(DWORD StartValue, LPVOID BaseAddress, DWORD WordCount) {
+static WORD CalcCheckSum(DWORD StartValue, LPVOID BaseAddress, DWORD WordCount) {
 	LPWORD Ptr = (LPWORD)BaseAddress;
 	DWORD Sum = StartValue;
 	for (DWORD i = 0; i < WordCount; i++) {
@@ -269,17 +269,14 @@ static __forceinline WORD CalcCheckSum(DWORD StartValue, LPVOID BaseAddress, DWO
 	return (WORD)(LOWORD(Sum) + HIWORD(Sum));
 }
 
-BOOLEAN __forceinline WINAPI CheckSumBufferedFile(LPVOID BaseAddress, DWORD BufferLength) {
-	PIMAGE_NT_HEADERS header = RtlImageNtHeader(BaseAddress);
-	DWORD CalcSum = CalcCheckSum(0, BaseAddress, (BufferLength + 1) / sizeof(WORD));
-	DWORD HdrSum = header->OptionalHeader.CheckSum;
-	if (!HdrSum)return TRUE;
+static BOOLEAN CheckSumBufferedFile(LPVOID BaseAddress, DWORD BufferLength, DWORD CheckSum) {
+	DWORD CalcSum = CalcCheckSum(0, BaseAddress, (BufferLength + 1) / sizeof(WORD)), HdrSum = CheckSum;
 
-	if (!header) return FALSE;
 	if (LOWORD(CalcSum) >= LOWORD(HdrSum)) CalcSum -= LOWORD(HdrSum);
 	else CalcSum = ((LOWORD(CalcSum) - LOWORD(HdrSum)) & 0xFFFF) - 1;
 	if (LOWORD(CalcSum) >= HIWORD(HdrSum)) CalcSum -= HIWORD(HdrSum);
 	else CalcSum = ((LOWORD(CalcSum) - HIWORD(HdrSum)) & 0xFFFF) - 1;
+	
 	CalcSum += BufferLength;
 	return HdrSum == CalcSum;
 }
@@ -301,10 +298,9 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(
 		headers.nt = RtlImageNtHeader(Buffer);
 		PIMAGE_SECTION_HEADER sections = nullptr;
 		size_t SizeofImage = 0;
+		DWORD CheckSum = 0;
 
-		if (!headers.nt) {
-			return FALSE;
-		}
+		if (!headers.nt) return FALSE;
 
 		switch (headers.nt->OptionalHeader.Magic) {
 		case IMAGE_NT_OPTIONAL_HDR32_MAGIC:
@@ -316,6 +312,9 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(
 
 			//Signature size
 			SizeofImage += headers.nt32->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY].Size;
+
+			CheckSum = headers.nt32->OptionalHeader.CheckSum;
+
 			break;
 		case IMAGE_NT_OPTIONAL_HDR64_MAGIC:
 			sections = PIMAGE_SECTION_HEADER((char*)&headers.nt64->OptionalHeader + headers.nt64->FileHeader.SizeOfOptionalHeader);
@@ -324,14 +323,20 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(
 			for (WORD i = 0; i < headers.nt64->FileHeader.NumberOfSections; ++i, ++sections)
 				SizeofImage += sections->SizeOfRawData;
 			SizeofImage += headers.nt64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY].Size;
+
+			CheckSum = headers.nt64->OptionalHeader.CheckSum;
+
 			break;
 		default:
 			return FALSE;
 		}
-		IMAGE_FIRST_SECTION(headers.nt32);
+
 		ProbeForRead(Buffer, SizeofImage);
 		if (Size)*Size = SizeofImage;
-		result = CheckSumBufferedFile(Buffer, (DWORD)SizeofImage);
+
+		if (!CheckSum)return TRUE;
+
+		result = CheckSumBufferedFile(Buffer, (DWORD)SizeofImage, CheckSum);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		SetLastError(RtlNtStatusToDosError(GetExceptionCode()));

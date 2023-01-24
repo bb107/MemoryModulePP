@@ -58,7 +58,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	__try {
 		*BaseAddress = nullptr;
 		if (LdrEntry)*LdrEntry = nullptr;
-		if (!(dwFlags & LOAD_FLAGS_PASS_IMAGE_CHECK) && !RtlIsValidImageBuffer(BufferAddress, &BufferSize))status = STATUS_INVALID_IMAGE_FORMAT;
+		if (!RtlIsValidImageBuffer(BufferAddress, &BufferSize) && !(dwFlags & LOAD_FLAGS_PASS_IMAGE_CHECK))status = STATUS_INVALID_IMAGE_FORMAT;
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();
