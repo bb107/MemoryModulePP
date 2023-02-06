@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include <cstdlib>
 
 static NTSTATUS NTAPI LdrMapDllMemory(
 	_In_ HMEMORYMODULE ViewBase,
@@ -32,13 +31,6 @@ static NTSTATUS NTAPI LdrMapDllMemory(
 	RtlInsertMemoryTableEntry(LdrEntry);
 	if (DataTableEntry)*DataTableEntry = LdrEntry;
 	return STATUS_SUCCESS;
-}
-
-NTSTATUS NTAPI LdrLoadDllMemory(
-	_Out_ HMEMORYMODULE* BaseAddress,
-	_In_  LPVOID BufferAddress,
-	_In_  size_t Reserved) {
-	return LdrLoadDllMemoryExW(BaseAddress, nullptr, 0, BufferAddress, Reserved, nullptr, nullptr);
 }
 
 NTSTATUS NTAPI LdrLoadDllMemoryExW(
@@ -198,33 +190,6 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	return status;
 }
 
-NTSTATUS NTAPI LdrLoadDllMemoryExA(
-	_Out_ HMEMORYMODULE* BaseAddress,
-	_Out_opt_ PVOID* LdrEntry,
-	_In_ DWORD dwFlags,
-	_In_ LPVOID BufferAddress,
-	_In_ size_t BufferSize,
-	_In_opt_ LPCSTR DllName,
-	_In_opt_ LPCSTR DllFullName) {
-	LPWSTR _DllName = nullptr, _DllFullName = nullptr;
-	size_t size;
-	NTSTATUS status;
-	if (DllName) {
-		size = strlen(DllName) + 1;
-		_DllName = new wchar_t[size];
-		mbstowcs_s(nullptr, _DllName, size, DllName, size);
-	}
-	if (DllFullName) {
-		size = strlen(DllFullName) + 1;
-		_DllFullName = new wchar_t[size];
-		mbstowcs_s(nullptr, _DllFullName, size, DllFullName, size);
-	}
-	status = LdrLoadDllMemoryExW(BaseAddress, LdrEntry, dwFlags, BufferAddress, BufferSize, _DllName, _DllFullName);
-	delete[]_DllName;
-	delete[]_DllFullName;
-	return status;
-}
-
 NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress) {
 	PLDR_DATA_TABLE_ENTRY CurEntry;
 	ULONG count = 0;
@@ -291,7 +256,7 @@ NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress) {
 	return status;
 }
 
-__declspec(noreturn)
+DECLSPEC_NORETURN
 VOID NTAPI LdrUnloadDllMemoryAndExitThread(_In_ HMEMORYMODULE BaseAddress, _In_ DWORD dwExitCode) {
 	LdrUnloadDllMemory(BaseAddress);
 	RtlExitUserThread(dwExitCode);
