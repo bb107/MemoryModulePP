@@ -64,26 +64,30 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	if (dwFlags & LOAD_FLAGS_USE_DLL_NAME && (!DllName || !DllFullName))return STATUS_INVALID_PARAMETER_3;
 
 	if (DllName) {
-		PLIST_ENTRY ListHead, ListEntry;
-		PLDR_DATA_TABLE_ENTRY CurEntry;
+		PLIST_ENTRY ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList, ListEntry = ListHead->Flink;
 		PIMAGE_NT_HEADERS h1 = RtlImageNtHeader(BufferAddress), h2 = nullptr;
 		if (!h1)return STATUS_INVALID_IMAGE_FORMAT;
-		ListEntry = (ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList)->Flink;
+		
 		while (ListEntry != ListHead) {
-			CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+			PLDR_DATA_TABLE_ENTRY CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 			ListEntry = ListEntry->Flink;
+
 			/* Check if it's being unloaded */
 			if (!CurEntry->InMemoryOrderLinks.Flink) continue;
+			
 			/* Check if name matches */
 			if (!_wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, (CurEntry->BaseDllName.Length / sizeof(wchar_t)) - 4) ||
 				!_wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, CurEntry->BaseDllName.Length / sizeof(wchar_t))) {
+			
 				/* Let's compare their headers */
 				if (!(h2 = RtlImageNtHeader(CurEntry->DllBase)))continue;
 				if (!(module = MapMemoryModuleHandle((HMEMORYMODULE)CurEntry->DllBase)))continue;
 				if ((h1->OptionalHeader.SizeOfCode == h2->OptionalHeader.SizeOfCode) &&
 					(h1->OptionalHeader.SizeOfHeaders == h2->OptionalHeader.SizeOfHeaders)) {
+				
 					/* This is our entry!, update load count and return success */
 					if (!module->UseReferenceCount || dwFlags & LOAD_FLAGS_NOT_USE_REFERENCE_COUNT)return STATUS_INVALID_PARAMETER_3;
+					
 					RtlUpdateReferenceCount(module, FLAG_REFERENCE);
 					*BaseAddress = (HMEMORYMODULE)CurEntry->DllBase;
 					if (LdrEntry)*LdrEntry = CurEntry;

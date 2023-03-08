@@ -114,7 +114,37 @@ DWORD NTAPI MmpGetThreadCount() {
         while (true) {
 
             if (p->UniqueProcessId == pid) {
-                result = p->NumberOfThreads;
+                OBJECT_ATTRIBUTES oa{};
+                InitializeObjectAttributes(&oa, nullptr, 0, nullptr, nullptr);
+
+                THREAD_BASIC_INFORMATION tbi{};
+
+                NTSTATUS status;
+                for (ULONG i = 0; i < p->NumberOfThreads; ++i) {
+                    HANDLE hThread;
+                    status = NtOpenThread(
+                        &hThread,
+                        THREAD_QUERY_INFORMATION,
+                        &oa,
+                        &p->Threads[i].ClientId
+                    );
+
+                    if (NT_SUCCESS(status)) {
+                        status = NtQueryInformationThread(
+                            hThread,
+                            ThreadBasicInformation,
+                            &tbi,
+                            sizeof(tbi),
+                            nullptr
+                        );
+                        if (NT_SUCCESS(status) && !!tbi.TebBaseAddress->ThreadLocalStoragePointer) {
+                            ++result;
+                        }
+                        
+                        NtClose(hThread);
+                    }
+                }
+
                 break;
             }
 
@@ -126,6 +156,22 @@ DWORD NTAPI MmpGetThreadCount() {
     }
 
     return result;
+}
+
+PMMP_TLSP_RECORD MmpFindTlspRecordLockHeld() {
+    PLIST_ENTRY entry = MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer.Flink;
+    while (entry != &MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer) {
+
+        auto p = CONTAINING_RECORD(entry, MMP_TLSP_RECORD, InMmpThreadLocalStoragePointer);
+        if (p->UniqueThread == NtCurrentThreadId()) {
+            assert(p->TlspMmpBlock == NtCurrentTeb()->ThreadLocalStoragePointer);
+            return p;
+        }
+
+        entry = entry->Flink;
+    }
+
+    return nullptr;
 }
 
 DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
@@ -140,8 +186,6 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
             lpThreadParameter,
             sizeof(Context)
         );
-
-        RtlFreeHeap(RtlProcessHeap(), 0, lpThreadParameter);
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
         return GetExceptionCode();
@@ -150,6 +194,15 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
     if (!NtCurrentTeb()->ThreadLocalStoragePointer) {
         goto __skip_tls;
     }
+
+    //
+    // Check if we have already initialized
+    //
+    EnterCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
+    record = MmpFindTlspRecordLockHeld();
+    LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
+
+    if (!!record)goto __skip_tls;
 
     //
     // Allocate and replace ThreadLocalStoragePointer for new thread
@@ -162,7 +215,6 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
         record->TlspMmpBlock = (PVOID*)MmpAllocateTlsp();
         record->UniqueThread = NtCurrentThreadId();
         if (record->TlspMmpBlock) {
-
             auto size = CONTAINING_RECORD(record->TlspLdrBlock, TLS_VECTOR, ModuleTlsData)->Length;
             if ((HANDLE)(ULONG_PTR)size != NtCurrentThreadId()) {
                 RtlCopyMemory(
@@ -230,91 +282,14 @@ __skip_tls:
     return Context.ThreadStartRoutine(Context.ThreadParameter);
 }
 
-NTSTATUS NTAPI HookNtCreateThread(
-    _Out_ PHANDLE ThreadHandle,
-    _In_ ACCESS_MASK DesiredAccess,
-    _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
-    _In_ HANDLE ProcessHandle,
-    _Out_ PCLIENT_ID ClientId,
-    _In_ PCONTEXT ThreadContext,
-    _In_ PVOID InitialTeb,
-    _In_ BOOLEAN CreateSuspended) {
-    CONTEXT Context = *ThreadContext;
-    PTHREAD_CONTEXT _Context = PTHREAD_CONTEXT(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(*_Context)));
-    NTSTATUS status;
+VOID NTAPI HookRtlUserThreadStart(
+    _In_ PTHREAD_START_ROUTINE Function,
+    _In_ PVOID Parameter) {
+    THREAD_CONTEXT Context;
+    Context.ThreadStartRoutine = PTHREAD_START_ROUTINE(Function);
+    Context.ThreadParameter = Parameter;
 
-    if (!_Context)return STATUS_NO_MEMORY;
-
-#ifndef _WIN64
-    _Context->ThreadStartRoutine = PTHREAD_START_ROUTINE(Context.Eax);
-    _Context->ThreadParameter = LPVOID(Context.Ebx);
-
-    Context.Eax = DWORD(MmpUserThreadStart);
-    Context.Ebx = DWORD(_Context);
-
-#else
-    _Context->ThreadStartRoutine = PTHREAD_START_ROUTINE(Context.Rcx);
-    _Context->ThreadParameter = LPVOID(Context.Rdx);
-
-    Context.Rcx = ULONG64(MmpUserThreadStart);
-    Context.Rdx = ULONG64(_Context);
-#endif
-
-    status = MmpGlobalDataPtr->MmpTls->Hooks.OriginNtCreateThread(
-        ThreadHandle,
-        DesiredAccess,
-        ObjectAttributes,
-        ProcessHandle,
-        ClientId,
-        &Context,
-        (PINITIAL_TEB)InitialTeb,
-        CreateSuspended
-    );
-    if (!NT_SUCCESS(status)) {
-        RtlFreeHeap(RtlProcessHeap(), 0, _Context);
-    }
-
-    return status;
-}
-
-NTSTATUS NTAPI HookNtCreateThreadEx(
-    _Out_ PHANDLE ThreadHandle,
-    _In_ ACCESS_MASK DesiredAccess,
-    _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
-    _In_ HANDLE ProcessHandle,
-    _In_ PVOID StartRoutine,
-    _In_opt_ PVOID Argument,
-    _In_ ULONG CreateFlags,
-    _In_ SIZE_T ZeroBits,
-    _In_ SIZE_T StackSize,
-    _In_ SIZE_T MaximumStackSize,
-    _In_opt_ PVOID AttributeList) {
-    PTHREAD_CONTEXT Context = PTHREAD_CONTEXT(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(*Context)));
-    if (!Context) {
-        return STATUS_NO_MEMORY;
-    }
-
-    Context->ThreadStartRoutine = PTHREAD_START_ROUTINE(StartRoutine);
-    Context->ThreadParameter = Argument;
-
-    NTSTATUS status = MmpGlobalDataPtr->MmpTls->Hooks.OriginNtCreateThreadEx(
-        ThreadHandle,
-        DesiredAccess,
-        ObjectAttributes,
-        ProcessHandle,
-        MmpUserThreadStart,
-        Context,
-        CreateFlags,
-        ZeroBits,
-        StackSize,
-        MaximumStackSize,
-        (PPS_ATTRIBUTE_LIST)AttributeList
-    );
-    if (!NT_SUCCESS(status)) {
-        RtlFreeHeap(RtlProcessHeap(), 0, Context);
-    }
-
-    return status;
+    return MmpGlobalDataPtr->MmpTls->Hooks.OriginRtlUserThreadStart(MmpUserThreadStart, &Context);
 }
 
 VOID NTAPI HookLdrShutdownThread(VOID) {
@@ -327,27 +302,16 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
     //
     EnterCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
 
-    entry = MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer.Flink;
-    while (entry != &MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer) {
-
-        auto p = CONTAINING_RECORD(entry, MMP_TLSP_RECORD, InMmpThreadLocalStoragePointer);
-        if (p->UniqueThread == NtCurrentThreadId()) {
-            assert(p->TlspMmpBlock == NtCurrentTeb()->ThreadLocalStoragePointer);
-
-            //
-            // Restore tlsp
-            //
-            NtCurrentTeb()->ThreadLocalStoragePointer = p->TlspLdrBlock;
-
-            RemoveEntryList(&p->InMmpThreadLocalStoragePointer);
-            record = p;
-            break;
-        }
-
-        entry = entry->Flink;
-    }
-
+    record = MmpFindTlspRecordLockHeld();
     if (record) {
+
+        //
+        // Restore tlsp
+        //
+
+        NtCurrentTeb()->ThreadLocalStoragePointer = record->TlspLdrBlock;
+        RemoveEntryList(&record->InMmpThreadLocalStoragePointer);
+
         --MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount;
     }
 
@@ -829,17 +793,15 @@ BOOL NTAPI MmpTlsInitialize() {
     // Hook functions
     //
 
-    MmpGlobalDataPtr->MmpTls->Hooks.OriginNtCreateThread = NtCreateThread;
-    MmpGlobalDataPtr->MmpTls->Hooks.OriginNtCreateThreadEx = NtCreateThreadEx;
     MmpGlobalDataPtr->MmpTls->Hooks.OriginLdrShutdownThread = LdrShutdownThread;
     MmpGlobalDataPtr->MmpTls->Hooks.OriginNtSetInformationProcess = NtSetInformationProcess;
+    MmpGlobalDataPtr->MmpTls->Hooks.OriginRtlUserThreadStart = (decltype(&RtlUserThreadStart))GetProcAddress((HMODULE)MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry->DllBase, "RtlUserThreadStart");
 
     DetourTransactionBegin();
     DetourUpdateThread(NtCurrentThread());
-    DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginNtCreateThread, HookNtCreateThread);
-    DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginNtCreateThreadEx, HookNtCreateThreadEx);
     DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginLdrShutdownThread, HookLdrShutdownThread);
     DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginNtSetInformationProcess, HookNtSetInformationProcess);
+    DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginRtlUserThreadStart, HookRtlUserThreadStart);
     DetourTransactionCommit();
 
     return TRUE;

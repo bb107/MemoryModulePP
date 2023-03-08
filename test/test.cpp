@@ -2,6 +2,8 @@
 #include "../MemoryModule/LoadDllMemoryApi.h"
 #include <cstdio>
 
+//PMMP_GLOBAL_DATA MmpGlobalDataPtr = *(PMMP_GLOBAL_DATA*)GetProcAddress(GetModuleHandleA("MemoryModule.dll"), "MmpGlobalDataPtr");
+
 static PVOID ReadDllFile(LPCSTR FileName) {
     LPVOID buffer;
     size_t size;
@@ -130,8 +132,27 @@ void test_uef() {
     return;
 }
 
+void Tp() {
+    auto pool = CreateThreadpool(nullptr);
+    if (pool) {
+
+        SetThreadpoolThreadMaximum(pool, 1);
+        SetThreadpoolThreadMinimum(pool, 1);
+
+        Sleep(1000);
+
+        CloseThreadpool(pool);
+    }
+}
+
 int main() {
-    test_uef();
+
+    DisplayStatus();
+    test();
+    
+    Tp();
+
+    WaitForSingleObject(NtCurrentProcess(), INFINITE);
 
     return 0;
 }

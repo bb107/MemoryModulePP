@@ -29,10 +29,11 @@ typedef struct _MMP_TLS_DATA {
 	DWORD MmpActiveThreadCount;
 
 	struct {
-		decltype(&NtCreateThread) OriginNtCreateThread;
-		decltype(&NtCreateThreadEx) OriginNtCreateThreadEx;
+		PVOID HookReserved1;
+		PVOID HookReserved2;
 		decltype(&NtSetInformationProcess) OriginNtSetInformationProcess;
 		decltype(&LdrShutdownThread) OriginLdrShutdownThread;
+		decltype(&RtlUserThreadStart) OriginRtlUserThreadStart;
 	}Hooks;
 }MMP_TLS_DATA, * PMMP_TLS_DATA;
 
@@ -77,7 +78,7 @@ typedef enum class _WINDOWS_VERSION :BYTE {
 }WINDOWS_VERSION;
 
 #define MEMORY_MODULE_MAJOR_VERSION 1
-#define MEMORY_MODULE_MINOR_VERSION 1
+#define MEMORY_MODULE_MINOR_VERSION 2
 
 typedef struct _MMP_GLOBAL_DATA {
 
