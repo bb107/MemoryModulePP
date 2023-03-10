@@ -282,6 +282,7 @@ __skip_tls:
     return Context.ThreadStartRoutine(Context.ThreadParameter);
 }
 
+#ifdef _WIN64
 VOID NTAPI HookRtlUserThreadStart(
     _In_ PTHREAD_START_ROUTINE Function,
     _In_ PVOID Parameter) {
@@ -291,6 +292,36 @@ VOID NTAPI HookRtlUserThreadStart(
 
     return MmpGlobalDataPtr->MmpTls->Hooks.OriginRtlUserThreadStart(MmpUserThreadStart, &Context);
 }
+#else
+VOID
+__declspec(naked)
+HookRtlUserThreadStart(
+    _In_ PTHREAD_START_ROUTINE Function,    //eax
+    _In_ PVOID Parameter) {                 //ebx
+    __asm {
+        // THREAD_CONTEXT Context;
+        sub esp, 8;
+
+        // Context.ThreadStartRoutine = PTHREAD_START_ROUTINE(Function);
+        mov dword ptr ds : [esp] , eax;
+
+        // Context.ThreadParameter = Parameter;
+        mov dword ptr ds : [esp + 4] , ebx;
+        
+        mov eax, MmpUserThreadStart;
+        mov ebx, esp;
+
+        // Shadow stack for ntdll!RtlUserThreadStart
+        sub esp, 8;
+
+        // MmpGlobalDataPtr->MmpTls->Hooks.OriginRtlUserThreadStart(MmpUserThreadStart, &Context);
+        mov ecx, MmpGlobalDataPtr;
+        mov ecx, dword ptr ds : [ecx + 0x48] ;
+        mov ecx, dword ptr ds : [ecx + 0x48] ;
+        call ecx;
+    }
+}
+#endif
 
 VOID NTAPI HookLdrShutdownThread(VOID) {
 

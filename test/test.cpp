@@ -118,41 +118,28 @@ end:
     return 0;
 }
 
-void test_uef() {
-    auto buffer = ReadDllFile("a.dll");
+void test_cf() {
+    auto buffer = ReadDllFile("CoreFoundation.dll");
 
-    HMODULE hm = LoadLibraryMemory(buffer);
-    auto pfn = GetProcAddress(hm, "unhandled_exception");
+    if (buffer) {
+        HMODULE hm = LoadLibraryMemory(buffer);
+        delete[]buffer;
 
-    auto result = pfn();
-    if (result == 1234) {
-        printf("mmpp success\n");
+        if (hm) {
+            printf("Load success: %p\n", hm);
+            FreeLibraryMemory(hm);
+        }
+        else {
+            printf("Load fail: %d\n", GetLastError());
+        }
     }
 
     return;
 }
 
-void Tp() {
-    auto pool = CreateThreadpool(nullptr);
-    if (pool) {
-
-        SetThreadpoolThreadMaximum(pool, 1);
-        SetThreadpoolThreadMinimum(pool, 1);
-
-        Sleep(1000);
-
-        CloseThreadpool(pool);
-    }
-}
-
 int main() {
-
     DisplayStatus();
-    test();
-    
-    Tp();
-
-    WaitForSingleObject(NtCurrentProcess(), INFINITE);
+    test_cf();
 
     return 0;
 }
