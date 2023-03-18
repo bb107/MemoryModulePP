@@ -454,7 +454,7 @@ BOOL NTAPI PreHookNtSetInformationProcess() {
 }
 
 NTSTATUS NTAPI HookNtSetInformationProcess(
-    _In_ HANDLE ProcessHandle,
+    _In_opt_ HANDLE ProcessHandle,
     _In_ PROCESSINFOCLASS ProcessInformationClass,
     _In_reads_bytes_(ProcessInformationLength) PVOID ProcessInformation,
     _In_ ULONG ProcessInformationLength) {
@@ -467,7 +467,6 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
             ProcessInformationLength
         );
     }
-
 
     auto ProcessTlsInformation = PPROCESS_TLS_INFORMATION(ProcessInformation);
     auto hProcess = ProcessHandle ? ProcessHandle : NtCurrentProcess();
@@ -556,8 +555,11 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
                 PMMP_TLSP_RECORD j = CONTAINING_RECORD(entry, MMP_TLSP_RECORD, InMmpThreadLocalStoragePointer);
 
                 if (ProcessTlsInformation->OperationType == ProcessTlsReplaceVector) {
-                    if (j->TlspMmpBlock[ProcessTlsInformation->TlsVectorLength] == ProcessTlsInformation->ThreadData->TlsVector[ProcessTlsInformation->TlsVectorLength]) {
+                    if (j->TlspMmpBlock[ProcessTlsInformation->TlsVectorLength] == ProcessTlsInformation->ThreadData[i].TlsVector[ProcessTlsInformation->TlsVectorLength]) {
                         found = true;
+
+                        //auto tlsp = CONTAINING_RECORD(ProcessTlsInformation->ThreadData[i].TlsVector, TLS_VECTOR, TLS_VECTOR::ModuleTlsData);
+                        //assert(tlsp->Length >= ProcessTlsInformation->TlsVectorLength);
 
                         // Copy old data to new pointer
                         RtlCopyMemory(
@@ -767,15 +769,27 @@ NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
         return STATUS_NO_MEMORY;
     }
 
-    status = NtSetInformationProcess(
+    status = HookNtSetInformationProcess(
         nullptr,                        // hack
         PROCESSINFOCLASS::ProcessTlsInformation,
         ProcessTlsInformation,
         (ULONG)Length
     );
 
+    ThreadCount = 0;
     for (DWORD i = 0; i < ProcessTlsInformation->ThreadDataCount; ++i) {
+        if (!ProcessTlsInformation->ThreadData[i].Flags) {
+            ++ThreadCount;
+        }
+
         RtlFreeHeap(RtlProcessHeap(), 0, ProcessTlsInformation->ThreadData[i].TlsModulePointer);
+    }
+
+    if (ThreadCount) {
+        EnterCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
+        MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount -= ThreadCount;
+        assert(MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount > 0);
+        LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
     }
 
     RtlFreeHeap(RtlProcessHeap(), 0, ProcessTlsInformation);

@@ -6,3 +6,4 @@ Socket = ws2_32.WSASocketW
 VerifyTruse = wintrust.WinVerifyTrust
 test_user32
 unhandled_exception
+GdiplusTest

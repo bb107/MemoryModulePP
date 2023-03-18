@@ -172,7 +172,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="exception.cpp" />
+    <ClCompile Include="gdiplus.cpp" />
     <ClCompile Include="load.cpp" />
+    <ClCompile Include="thread.cpp" />
+    <ClCompile Include="unhandled_exception.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
