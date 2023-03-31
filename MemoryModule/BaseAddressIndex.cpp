@@ -24,7 +24,7 @@ NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(
 	auto LdrpModuleBaseAddressIndex = MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex;
 	if (!LdrpModuleBaseAddressIndex)return STATUS_UNSUCCESSFUL;
 
-	PLDR_DATA_TABLE_ENTRY_WIN8 LdrNode = CONTAINING_RECORD(LdrpModuleBaseAddressIndex, LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode);
+	PLDR_DATA_TABLE_ENTRY_WIN8 LdrNode = CONTAINING_RECORD(LdrpModuleBaseAddressIndex->Root, LDR_DATA_TABLE_ENTRY_WIN8, BaseAddressIndexNode);
 	bool bRight = false;
 
 	while (true) {
