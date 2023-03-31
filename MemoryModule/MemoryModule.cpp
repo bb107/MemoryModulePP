@@ -248,7 +248,7 @@ NTSTATUS MemoryLoadLibrary(
 				nullptr,
 				old_header->OptionalHeader.SizeOfImage,
 				MEM_RESERVE,
-				PAGE_READWRITE
+				PAGE_EXECUTE_READWRITE
 			);
 			if (!base) status = STATUS_NO_MEMORY;
 		}

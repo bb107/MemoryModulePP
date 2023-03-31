@@ -540,13 +540,14 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
             TlsLength
         );
 
+        if (!NT_SUCCESS(status))break;
+
         //
         // Modify our mapping
         //
         EnterCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
         for (ULONG i = 0; i < Tls->ThreadDataCount; ++i) {
-
-            bool found = false;
+            BOOL found = FALSE;
             PLIST_ENTRY entry = MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer.Flink;
 
             // Find thread-spec tlsp
@@ -556,10 +557,7 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
 
                 if (ProcessTlsInformation->OperationType == ProcessTlsReplaceVector) {
                     if (j->TlspMmpBlock[ProcessTlsInformation->TlsVectorLength] == ProcessTlsInformation->ThreadData[i].TlsVector[ProcessTlsInformation->TlsVectorLength]) {
-                        found = true;
-
-                        //auto tlsp = CONTAINING_RECORD(ProcessTlsInformation->ThreadData[i].TlsVector, TLS_VECTOR, TLS_VECTOR::ModuleTlsData);
-                        //assert(tlsp->Length >= ProcessTlsInformation->TlsVectorLength);
+                        found = TRUE;
 
                         // Copy old data to new pointer
                         RtlCopyMemory(
@@ -577,7 +575,7 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
                 }
                 else {
                     if (j->TlspMmpBlock[ProcessTlsInformation->TlsIndex] == ProcessTlsInformation->ThreadData[i].TlsModulePointer) {
-                        found = true;
+                        found = TRUE;
 
                         if (ProcessHandle) {
                             j->TlspLdrBlock[ProcessTlsInformation->TlsIndex] = ProcessTlsInformation->ThreadData[i].TlsModulePointer;
