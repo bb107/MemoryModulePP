@@ -158,7 +158,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 		}
 
 		if (!(dwFlags & LOAD_FLAGS_NOT_HANDLE_TLS)) {
-			status = MmpHandleTlsData(ModuleEntry);
+			status = MmpGlobalDataPtr->MmpFunctions->_MmpHandleTlsData(ModuleEntry);
 			if (!NT_SUCCESS(status)) {
 				if (dwFlags & LOAD_FLAGS_NOT_FAIL_IF_HANDLE_TLS) status = 0x7fffffff;
 				if (!NT_SUCCESS(status))break;
@@ -246,7 +246,7 @@ NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress) {
 			}
 
 			if (module->TlsHandled) {
-				status = MmpReleaseTlsEntry(CurEntry);
+				status = MmpGlobalDataPtr->MmpFunctions->_MmpReleaseTlsEntry(CurEntry);
 				if (!NT_SUCCESS(status)) __fastfail(FAST_FAIL_FATAL_APP_EXIT);
 			}
 

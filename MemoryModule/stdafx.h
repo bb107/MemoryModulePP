@@ -8,6 +8,11 @@
 #include <ntstatus.h>
 #endif
 
+//
+// Determine whether to use MmpTls(1) or LdrpTls(0)
+//
+#define MMPP_USE_TLS 1
+
 // offsetof()
 #include <cstddef>
 

@@ -49,6 +49,7 @@
     <ClCompile Include="LoadDllMemoryApi.cpp" />
     <ClCompile Include="MemoryModule.cpp" />
     <ClCompile Include="MmpDotNet.cpp" />
+    <ClCompile Include="MmpLdrpTls.cpp" />
     <ClCompile Include="MmpTls.cpp" />
     <ClCompile Include="Loader.cpp" />
     <ClCompile Include="InvertedFunctionTable.cpp" />

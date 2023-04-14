@@ -63,6 +63,15 @@ typedef struct _MMP_DOT_NET_DATA {
 	}Hooks;
 }MMP_DOT_NET_DATA, * PMMP_DOT_NET_DATA;
 
+typedef struct _MMP_FUNCTIONS {
+	decltype(&LdrLoadDllMemoryExW) _LdrLoadDllMemoryExW;
+	decltype(&LdrUnloadDllMemory) _LdrUnloadDllMemory;
+	decltype(&LdrUnloadDllMemoryAndExitThread) _LdrUnloadDllMemoryAndExitThread;
+
+	decltype(&MmpHandleTlsData) _MmpHandleTlsData;
+	decltype(&MmpReleaseTlsEntry) _MmpReleaseTlsEntry;
+}MMP_FUNCTIONS, * PMMP_FUNCTIONS;
+
 typedef enum class _WINDOWS_VERSION :BYTE {
 	null,
 	xp,
@@ -78,7 +87,7 @@ typedef enum class _WINDOWS_VERSION :BYTE {
 }WINDOWS_VERSION;
 
 #define MEMORY_MODULE_MAJOR_VERSION 1
-#define MEMORY_MODULE_MINOR_VERSION 2
+#define MEMORY_MODULE_MINOR_VERSION 3
 
 typedef struct _MMP_GLOBAL_DATA {
 
@@ -111,6 +120,8 @@ typedef struct _MMP_GLOBAL_DATA {
 
 	PVOID BaseAddress;
 
+	PMMP_FUNCTIONS MmpFunctions;
+
 }MMP_GLOBAL_DATA, * PMMP_GLOBAL_DATA;
 
 #define MMP_GLOBAL_DATA_SIZE (\
@@ -119,7 +130,8 @@ typedef struct _MMP_GLOBAL_DATA {
 	sizeof(MMP_INVERTED_FUNCTION_TABLE_DATA) + \
 	sizeof(MMP_LDR_ENTRY_DATA) + \
 	sizeof(MMP_TLS_DATA) + \
-	sizeof(MMP_DOT_NET_DATA)\
+	sizeof(MMP_DOT_NET_DATA) + \
+	sizeof(PMMP_FUNCTIONS)\
 )
 
 extern PMMP_GLOBAL_DATA MmpGlobalDataPtr;

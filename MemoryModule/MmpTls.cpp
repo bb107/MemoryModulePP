@@ -1,4 +1,6 @@
 #include "stdafx.h"
+
+#if (MMPP_USE_TLS)
 #include <cassert>
 #include <algorithm>
 #include <3rdparty/Detours/detours.h>
@@ -849,3 +851,5 @@ BOOL NTAPI MmpTlsInitialize() {
 
     return TRUE;
 }
+
+#endif
