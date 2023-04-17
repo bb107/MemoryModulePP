@@ -6,7 +6,7 @@ static NTSTATUS RtlFreeDependencies(_In_ PLDR_DATA_TABLE_ENTRY_WIN10 LdrEntry) {
 	PLDR_DATA_TABLE_ENTRY_WIN10 ModuleEntry = nullptr;
 	_LDRP_CSLIST* head = (decltype(head))LdrEntry->DdagNode->Dependencies, * entry = head;
 	HANDLE heap = NtCurrentPeb()->ProcessHeap;
-	const static bool IsWin8 = RtlIsWindowsVersionInScope(6, 2, 0, 6, 3, -1);
+	BOOL IsWin8 = RtlIsWindowsVersionInScope(6, 2, 0, 6, 3, -1);
 	if (!LdrEntry->DdagNode->Dependencies)return STATUS_SUCCESS;
 
 	//find all dependencies and free
@@ -134,7 +134,7 @@ BOOL NTAPI RtlInitializeLdrDataTableEntry(
 	case WINDOWS_VERSION::win8:
 	case WINDOWS_VERSION::winBlue: {
 		auto entry = (PLDR_DATA_TABLE_ENTRY_WIN8)LdrEntry;
-		const static bool IsWin8 = RtlIsWindowsVersionInScope(6, 2, 0, 6, 3, -1);
+		BOOL IsWin8 = RtlIsWindowsVersionInScope(6, 2, 0, 6, 3, -1);
 		NtQuerySystemTime(&entry->LoadTime);
 		entry->OriginalBase = headers->OptionalHeader.ImageBase;
 		entry->BaseNameHashValue = LdrHashEntry(DllBaseName, false);

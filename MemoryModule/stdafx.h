@@ -11,7 +11,9 @@
 //
 // Determine whether to use MmpTls(1) or LdrpTls(0)
 //
+#ifndef MMPP_USE_TLS
 #define MMPP_USE_TLS 1
+#endif
 
 // offsetof()
 #include <cstddef>

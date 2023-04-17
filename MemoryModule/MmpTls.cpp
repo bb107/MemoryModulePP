@@ -198,18 +198,18 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
     }
 
     //
-    // Check if we have already initialized
-    //
-    EnterCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
-    record = MmpFindTlspRecordLockHeld();
-    LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
-
-    if (!!record)goto __skip_tls;
-
-    //
     // Allocate and replace ThreadLocalStoragePointer for new thread
     //
     EnterCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
+
+    //
+    // Check if we have already initialized
+    //
+    record = MmpFindTlspRecordLockHeld();
+    if (!!record) {
+        LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
+        goto __skip_tls;
+    }
 
     record = PMMP_TLSP_RECORD(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(MMP_TLSP_RECORD)));
     if (record) {
@@ -276,9 +276,7 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
         return ERROR_NOT_ENOUGH_MEMORY;
     }
 
-    EnterCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
-    ++MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount;
-    LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
+    InterlockedIncrement(&MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount);
 
 __skip_tls:
     return Context.ThreadStartRoutine(Context.ThreadParameter);
@@ -369,6 +367,9 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
         }
 
         RtlFreeHeap(RtlProcessHeap(), 0, TlspMmpBlock);
+        RtlFreeHeap(RtlProcessHeap(), 0, record);
+        RtlFreeHeap(RtlProcessHeap(), 0, record);
+        RtlFreeHeap(RtlProcessHeap(), 0, record);
     }
     else {
         if (MmpGlobalDataPtr->MmpTls->MmpTlsList.Flink != &MmpGlobalDataPtr->MmpTls->MmpTlsList) {

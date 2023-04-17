@@ -53,8 +53,6 @@ NTSTATUS NTAPI RtlInsertModuleBaseAddressIndexNode(
 }
 
 NTSTATUS NTAPI RtlRemoveModuleBaseAddressIndexNode(_In_ PLDR_DATA_TABLE_ENTRY DataTableEntry) {
-	static auto tree{ MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex };
-	if (!tree->Root)return STATUS_UNSUCCESSFUL;
-	RtlRbRemoveNode(tree, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
+	RtlRbRemoveNode(MmpGlobalDataPtr->MmpBaseAddressIndex->LdrpModuleBaseAddressIndex, &PLDR_DATA_TABLE_ENTRY_WIN8(DataTableEntry)->BaseAddressIndexNode);
 	return STATUS_SUCCESS;
 }
