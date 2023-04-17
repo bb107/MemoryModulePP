@@ -138,6 +138,10 @@ static NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry() {
 BOOL NTAPI MmpTlsInitialize() {
 	if (!NT_SUCCESS(RtlFindLdrpHandleTlsData()) ||
 		!NT_SUCCESS(RtlFindLdrpReleaseTlsEntry())) {
+
+		LdrpHandleTlsData = nullptr;
+		LdrpReleaseTlsEntry = nullptr;
+
 		MmpGlobalDataPtr->MmpFeatures &= ~MEMORY_FEATURE_LDRP_HANDLE_TLS_DATA;
 		return FALSE;
 	}
@@ -147,8 +151,8 @@ BOOL NTAPI MmpTlsInitialize() {
 }
 
 NTSTATUS NTAPI MmpReleaseTlsEntry(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
-	typedef NTSTATUS(__stdcall* STDCALL)(PLDR_DATA_TABLE_ENTRY);
-	typedef NTSTATUS(__stdcall* THISCALL)(PLDR_DATA_TABLE_ENTRY);
+	typedef NTSTATUS(__stdcall* STDCALL)(PLDR_DATA_TABLE_ENTRY, PVOID*);
+	typedef NTSTATUS(__thiscall* THISCALL)(PLDR_DATA_TABLE_ENTRY, PVOID*);
 
 	union {
 		STDCALL stdcall;
@@ -159,7 +163,7 @@ NTSTATUS NTAPI MmpReleaseTlsEntry(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
 	fp.ptr = LdrpReleaseTlsEntry;
 
 	if (fp.ptr) {
-		return stdcall ? fp.stdcall(lpModuleEntry): fp.thiscall(lpModuleEntry);
+		return stdcall ? fp.stdcall(lpModuleEntry, nullptr) : fp.thiscall(lpModuleEntry, nullptr);
 	}
 	else {
 		return STATUS_NOT_SUPPORTED;
@@ -168,7 +172,7 @@ NTSTATUS NTAPI MmpReleaseTlsEntry(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
 
 NTSTATUS NTAPI MmpHandleTlsData(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
 	typedef NTSTATUS(__stdcall* STDCALL)(PLDR_DATA_TABLE_ENTRY);
-	typedef NTSTATUS(__stdcall* THISCALL)(PLDR_DATA_TABLE_ENTRY);
+	typedef NTSTATUS(__thiscall* THISCALL)(PLDR_DATA_TABLE_ENTRY);
 
 	union {
 		STDCALL stdcall;
