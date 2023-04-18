@@ -368,8 +368,6 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
 
         RtlFreeHeap(RtlProcessHeap(), 0, TlspMmpBlock);
         RtlFreeHeap(RtlProcessHeap(), 0, record);
-        RtlFreeHeap(RtlProcessHeap(), 0, record);
-        RtlFreeHeap(RtlProcessHeap(), 0, record);
     }
     else {
         if (MmpGlobalDataPtr->MmpTls->MmpTlsList.Flink != &MmpGlobalDataPtr->MmpTls->MmpTlsList) {
