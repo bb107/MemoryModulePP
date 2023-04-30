@@ -88,6 +88,12 @@ extern "C" {
 
 	PMEMORYMODULE WINAPI MapMemoryModuleHandle(HMEMORYMODULE hModule);
 
+	NTSTATUS MmpInitializeStructure(
+		DWORD ImageFileSize,
+		LPCVOID ImageFileBuffer,
+		PIMAGE_NT_HEADERS ImageHeaders
+	);
+
 #ifdef __cplusplus
 }
 #endif

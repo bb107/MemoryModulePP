@@ -1,6 +1,6 @@
 #include "stdafx.h"
 
-static NTSTATUS NTAPI LdrMapDllMemory(
+NTSTATUS NTAPI LdrMapDllMemory(
 	_In_ HMEMORYMODULE ViewBase,
 	_In_ DWORD dwFlags,
 	_In_opt_ PCWSTR DllName,

@@ -55,6 +55,20 @@
     <ClCompile Include="InvertedFunctionTable.cpp" />
     <ClCompile Include="LdrEntry.cpp" />
     <ClCompile Include="BaseAddressIndex.cpp" />
+    <ClCompile Include="ReflectiveLoader.c">
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</SupportJustMyCode>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='DebugDll|Win32'">false</SupportJustMyCode>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SupportJustMyCode>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='DebugDll|x64'">false</SupportJustMyCode>
+      <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</BufferSecurityCheck>
+      <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='ReleaseDll|Win32'">false</BufferSecurityCheck>
+      <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='DebugDll|Win32'">false</BufferSecurityCheck>
+      <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</BufferSecurityCheck>
+      <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</BufferSecurityCheck>
+      <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='ReleaseDll|x64'">false</BufferSecurityCheck>
+      <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='DebugDll|x64'">false</BufferSecurityCheck>
+      <BufferSecurityCheck Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</BufferSecurityCheck>
+    </ClCompile>
     <ClCompile Include="Utils.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -92,6 +106,7 @@
     <ClInclude Include="..\3rdparty\phnt\include\subprocesstag.h" />
     <ClInclude Include="..\3rdparty\phnt\include\winsta.h" />
     <ClInclude Include="LoadDllMemoryApi.h" />
+    <ClInclude Include="LoaderPrivate.h" />
     <ClInclude Include="MemoryModule.h" />
     <ClInclude Include="MmpDotNet.h" />
     <ClInclude Include="MmpGlobalData.h" />
@@ -100,6 +115,8 @@
     <ClInclude Include="BaseAddressIndex.h" />
     <ClInclude Include="InvertedFunctionTable.h" />
     <ClInclude Include="LdrEntry.h" />
+    <ClInclude Include="ReflectiveDLLInjection.h" />
+    <ClInclude Include="ReflectiveLoader.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="Utils.h" />
   </ItemGroup>

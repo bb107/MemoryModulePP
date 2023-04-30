@@ -1,7 +1,6 @@
 #include "../MemoryModule/stdafx.h"
 #include "../MemoryModule/LoadDllMemoryApi.h"
 #include <cstdio>
-#pragma comment(lib,"ntdll.lib")
 
 //PMMP_GLOBAL_DATA MmpGlobalDataPtr = *(PMMP_GLOBAL_DATA*)GetProcAddress(GetModuleHandleA("MemoryModule.dll"), "MmpGlobalDataPtr");
 

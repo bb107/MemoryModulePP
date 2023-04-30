@@ -55,6 +55,36 @@ BOOL WINAPI IsValidMemoryModuleHandle(HMEMORYMODULE hModule) {
 	return MapMemoryModuleHandle(hModule) != nullptr;
 }
 
+NTSTATUS MmpInitializeStructure(DWORD ImageFileSize, LPCVOID ImageFileBuffer, PIMAGE_NT_HEADERS ImageHeaders) {
+
+	if (!ImageHeaders)return STATUS_ACCESS_VIOLATION;
+
+	//
+	// Make sure there have enough free space to embed our structure.
+	//
+	int sizeOfHeaders = MmpSizeOfImageHeadersUnsafe((PVOID)ImageHeaders->OptionalHeader.ImageBase);
+	PIMAGE_SECTION_HEADER pSections = IMAGE_FIRST_SECTION(ImageHeaders);
+	for (int i = 0; i < ImageHeaders->FileHeader.NumberOfSections; ++i) {
+		if (pSections[i].VirtualAddress < sizeOfHeaders + sizeof(MEMORYMODULE)) {
+			return STATUS_NOT_SUPPORTED;
+		}
+	}
+
+	//
+	// Setup MemoryModule structure.
+	//
+	PMEMORYMODULE hMemoryModule = (PMEMORYMODULE)(ImageHeaders->OptionalHeader.ImageBase + sizeOfHeaders);
+	RtlZeroMemory(hMemoryModule, sizeof(MEMORYMODULE));
+	hMemoryModule->codeBase = (PBYTE)ImageHeaders->OptionalHeader.ImageBase;
+	hMemoryModule->dwImageFileSize = ImageFileSize;
+	hMemoryModule->Signature = MEMORY_MODULE_SIGNATURE;
+	hMemoryModule->SizeofHeaders = ImageHeaders->OptionalHeader.SizeOfHeaders;
+	hMemoryModule->lpReserved = (LPVOID)ImageFileBuffer;
+	hMemoryModule->dwReferenceCount = 1;
+
+	return STATUS_SUCCESS;
+}
+
 
 NTSTATUS MemoryResolveImportTable(
 	_In_ LPBYTE base,
@@ -280,31 +310,13 @@ NTSTATUS MemoryLoadLibrary(
 	);
 	new_header->OptionalHeader.ImageBase = (size_t)base;
 
-	//
-	// Make sure there have enough free space to embed our structure.
-	//
-	int sizeOfHeaders = MmpSizeOfImageHeadersUnsafe(base);
-	PIMAGE_SECTION_HEADER pSections = IMAGE_FIRST_SECTION(new_header);
-	for (int i = 0; i < new_header->FileHeader.NumberOfSections; ++i) {
-		if (pSections[i].VirtualAddress < sizeOfHeaders + sizeof(MEMORYMODULE)) {
-			status = STATUS_NOT_SUPPORTED;
-			return status;
-		}
-	}
-
-	//
-	// Setup MemoryModule structure.
-	//
-	PMEMORYMODULE hMemoryModule = (PMEMORYMODULE)(base + sizeOfHeaders);
-	RtlZeroMemory(hMemoryModule, sizeof(MEMORYMODULE));
-	hMemoryModule->codeBase = base;
-	hMemoryModule->dwImageFileSize = size;
-	hMemoryModule->Signature = MEMORY_MODULE_SIGNATURE;
-	hMemoryModule->SizeofHeaders = old_header->OptionalHeader.SizeOfHeaders;
-	hMemoryModule->lpReserved = (LPVOID)data;
-	hMemoryModule->dwReferenceCount = 1;
-
 	do {
+		//
+		// Setup MEMORYMODULE structure.
+		//
+		status = MmpInitializeStructure(size, data, new_header);
+		if (!NT_SUCCESS(status)) break;
+
 		//
 		// Allocate and copy sections
 		//

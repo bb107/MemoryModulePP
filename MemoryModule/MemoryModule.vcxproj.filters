@@ -28,6 +28,12 @@
     <Filter Include="Header Files\3rdparty\phnt">
       <UniqueIdentifier>{e1243ce3-529c-401e-83a4-fe009cda27b1}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\3rdparty\ReflectiveLoader">
+      <UniqueIdentifier>{3e49fb44-9cfb-4a48-b497-6fe396e1a258}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\3rdparty\ReflectiveLoader">
+      <UniqueIdentifier>{4bbbea53-468a-49af-9b66-b61471058da1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MemoryModule.cpp">
@@ -92,6 +98,9 @@
     </ClCompile>
     <ClCompile Include="MmpLdrpTls.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ReflectiveLoader.c">
+      <Filter>Source Files\3rdparty\ReflectiveLoader</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -225,6 +234,15 @@
       <Filter>Header Files\3rdparty\phnt</Filter>
     </ClInclude>
     <ClInclude Include="MmpGlobalData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ReflectiveLoader.h">
+      <Filter>Header Files\3rdparty\ReflectiveLoader</Filter>
+    </ClInclude>
+    <ClInclude Include="ReflectiveDLLInjection.h">
+      <Filter>Header Files\3rdparty\ReflectiveLoader</Filter>
+    </ClInclude>
+    <ClInclude Include="LoaderPrivate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

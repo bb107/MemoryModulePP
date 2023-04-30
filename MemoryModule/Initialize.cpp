@@ -1,5 +1,7 @@
 #include "stdafx.h"
+#include "LoaderPrivate.h"
 #include <wchar.h>
+#include <cassert>
 
 PMMP_GLOBAL_DATA MmpGlobalDataPtr;
 
@@ -489,9 +491,42 @@ NTSTATUS NTAPI Initialize() {
 }
 
 #ifdef _USRDLL
+extern "C" __declspec(dllexport) BOOL WINAPI ReflectiveMapDll(HMODULE hModule) {
+	PIMAGE_NT_HEADERS headers = RtlImageNtHeader(hModule);
+
+	headers->OptionalHeader.ImageBase = (SIZE_T)hModule;
+
+	NTSTATUS status = MmpInitializeStructure(0, nullptr, headers);
+	if (!NT_SUCCESS(status))return FALSE;
+
+	PMEMORYMODULE module = MapMemoryModuleHandle(hModule);
+	if (!module)return FALSE;
+
+	PLDR_DATA_TABLE_ENTRY ModuleEntry;
+	status = LdrMapDllMemory(hModule, 0, nullptr, nullptr, &ModuleEntry);
+	if (!NT_SUCCESS(status))return FALSE;
+
+	status = RtlInsertInvertedFunctionTable(hModule, headers->OptionalHeader.SizeOfImage);
+	if (!NT_SUCCESS(status)) return FALSE;
+
+	module->InsertInvertedFunctionTableEntry = true;
+	module->MappedDll = true;
+	module->LdrEntry = ModuleEntry;
+
+	return TRUE;
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved) {
 	if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
-		return NT_SUCCESS(Initialize());
+		if (NT_SUCCESS(Initialize())) {
+			if (lpReserved == (PVOID)-1) {
+				assert(ReflectiveMapDll(hModule));
+			}
+
+			return TRUE;
+		}
+
+		return FALSE;
 	}
 
 	return TRUE;
