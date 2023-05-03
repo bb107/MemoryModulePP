@@ -265,27 +265,27 @@ NTSTATUS MemoryLoadLibrary(
 	//
 	// Reserve the address range of image
 	//
-	LPBYTE base = (LPBYTE)VirtualAlloc(
-		LPVOID(old_header->OptionalHeader.ImageBase),
-		old_header->OptionalHeader.SizeOfImage,
-		MEM_RESERVE,
-		PAGE_EXECUTE_READWRITE
-	);
+	LPBYTE base = nullptr;
+	if ((old_header->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) == 0) {
+		base = (LPBYTE)VirtualAlloc(
+			LPVOID(old_header->OptionalHeader.ImageBase),
+			old_header->OptionalHeader.SizeOfImage,
+			MEM_RESERVE,
+			PAGE_EXECUTE_READWRITE
+		);
+	}
 	if (!base) {
-		if (old_header->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) {
+		base = (LPBYTE)VirtualAlloc(
+			nullptr,
+			old_header->OptionalHeader.SizeOfImage,
+			MEM_RESERVE,
+			PAGE_EXECUTE_READWRITE
+		);
+		if (!base) status = STATUS_NO_MEMORY;
+	}
 
-			base = (LPBYTE)VirtualAlloc(
-				nullptr,
-				old_header->OptionalHeader.SizeOfImage,
-				MEM_RESERVE,
-				PAGE_EXECUTE_READWRITE
-			);
-			if (!base) status = STATUS_NO_MEMORY;
-		}
-
-		if (!NT_SUCCESS(status)) {
-			return status;
-		}
+	if (!NT_SUCCESS(status)) {
+		return status;
 	}
 
 	//
