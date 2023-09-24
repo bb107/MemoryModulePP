@@ -1,66 +1,13 @@
 #include "stdafx.h"
 
 #if (MMPP_USE_TLS)
+#include "MmpTlsp.h"
+#include "MmpTlsFiber.h"
+
 #include <cassert>
 #include <algorithm>
 #include <3rdparty/Detours/detours.h>
 
-//
-// ThreadLocalStoragePointer Tls indexs
-//      [0, MMP_START_TLS_INDEX)                         Reserved for ntdll loader
-//      [MMP_START_TLS_INDEX, MMP_MAXIMUM_TLS_INDEX)     Reserved for MemoryModule
-//
-
-#define MMP_START_TLS_INDEX         0x80                            //128
-
-#define MMP_MAXIMUM_TLS_INDEX       0x100                           //256
-
-#define MMP_TLSP_INDEX_BUFFER_SIZE  (MMP_MAXIMUM_TLS_INDEX / 8)     //32
-
-#if (((MMP_START_TLS_INDEX | MMP_MAXIMUM_TLS_INDEX) & 7) || (MMP_START_TLS_INDEX >= MMP_MAXIMUM_TLS_INDEX))
-#error "MMP_START_TLS_INDEX must be smaller than MMP_MAXIMUM_TLS_INDEX, and both are 8-bit aligned."
-#endif
-
-#define MmpAllocateTlsp()   (RtlAllocateHeap(\
-                                RtlProcessHeap(),\
-                                HEAP_ZERO_MEMORY,\
-                                sizeof(PVOID)* MMP_MAXIMUM_TLS_INDEX\
-                            ))
-
-typedef struct _TLS_VECTOR {
-    union
-    {
-        ULONG  Length;
-        HANDLE ThreadId;
-    };
-
-    struct _TLS_VECTOR* PreviousDeferredTlsVector;
-    PVOID ModuleTlsData[ANYSIZE_ARRAY];
-} TLS_VECTOR, * PTLS_VECTOR;
-
-typedef struct _TLS_ENTRY {
-    LIST_ENTRY            TlsEntryLinks;
-    IMAGE_TLS_DIRECTORY   TlsDirectory;
-    PLDR_DATA_TABLE_ENTRY ModuleEntry;
-} TLS_ENTRY, * PTLS_ENTRY;
-
-typedef struct _MMP_TLSP_RECORD {
-
-    LIST_ENTRY InMmpThreadLocalStoragePointer;
-
-    HANDLE UniqueThread;
-
-    // PEB->ThreadLocalStoragePointer allocated by ntdll!Ldr
-    PVOID* TlspLdrBlock;
-
-    // PEB->ThreadLocalStoragePointer allocated by MemoryModulePP
-    PVOID* TlspMmpBlock;
-}MMP_TLSP_RECORD, * PMMP_TLSP_RECORD;
-
-typedef struct _THREAD_CONTEXT {
-    PTHREAD_START_ROUTINE ThreadStartRoutine;
-    LPVOID ThreadParameter;
-}THREAD_CONTEXT, * PTHREAD_CONTEXT;
 
 PVOID NTAPI MmpQuerySystemInformation(
     _In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
@@ -217,6 +164,8 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
         record->TlspMmpBlock = (PVOID*)MmpAllocateTlsp();
         record->UniqueThread = NtCurrentThreadId();
         if (record->TlspMmpBlock) {
+            record->TlspMmpBlock = ((PTLS_VECTOR)record->TlspMmpBlock)->ModuleTlsData;
+
             auto size = CONTAINING_RECORD(record->TlspLdrBlock, TLS_VECTOR, ModuleTlsData)->Length;
             if ((HANDLE)(ULONG_PTR)size != NtCurrentThreadId()) {
                 RtlCopyMemory(
@@ -327,6 +276,7 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
 
     PLIST_ENTRY entry;
     PMMP_TLSP_RECORD record = nullptr;
+    BOOL postpone = IsThreadAFiber();
 
     //
     // Find our tlsp record
@@ -335,14 +285,7 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
 
     record = MmpFindTlspRecordLockHeld();
     if (record) {
-
-        //
-        // Restore tlsp
-        //
-
-        NtCurrentTeb()->ThreadLocalStoragePointer = record->TlspLdrBlock;
         RemoveEntryList(&record->InMmpThreadLocalStoragePointer);
-
         --MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount;
     }
 
@@ -350,32 +293,45 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
 
     LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
 
-    //
-    // Free MemoryModule Tls data
-    //
-    RtlAcquireSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
-
     if (record) {
-        auto TlspMmpBlock = (PVOID*)record->TlspMmpBlock;
-        entry = MmpGlobalDataPtr->MmpTls->MmpTlsList.Flink;
-        while (entry != &MmpGlobalDataPtr->MmpTls->MmpTlsList) {
-
-            auto p = CONTAINING_RECORD(entry, TLS_ENTRY, TlsEntryLinks);
-            RtlFreeHeap(RtlProcessHeap(), 0, TlspMmpBlock[p->TlsDirectory.Characteristics]);
-
-            entry = entry->Flink;
+        if (postpone) {
+            
+            //
+            // Free MemoryModule Tls data after terminated
+            //
+            
+            MmpQueuePostponedTls(record);
         }
+        else {
 
-        RtlFreeHeap(RtlProcessHeap(), 0, TlspMmpBlock);
-        RtlFreeHeap(RtlProcessHeap(), 0, record);
+            //
+            // Free MemoryModule Tls data
+            //
+
+            RtlAcquireSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
+
+            auto TlspMmpBlock = (PVOID*)record->TlspMmpBlock;
+            entry = MmpGlobalDataPtr->MmpTls->MmpTlsList.Flink;
+            while (entry != &MmpGlobalDataPtr->MmpTls->MmpTlsList) {
+
+                auto p = CONTAINING_RECORD(entry, TLS_ENTRY, TlsEntryLinks);
+                RtlFreeHeap(RtlProcessHeap(), 0, TlspMmpBlock[p->TlsDirectory.Characteristics]);
+                TlspMmpBlock[p->TlsDirectory.Characteristics] = nullptr;
+
+                entry = entry->Flink;
+            }
+
+            RtlFreeHeap(RtlProcessHeap(), 0, CONTAINING_RECORD(record->TlspLdrBlock, TLS_VECTOR, TLS_VECTOR::ModuleTlsData));
+            RtlFreeHeap(RtlProcessHeap(), 0, record);
+
+            RtlReleaseSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
+        }
     }
     else {
         if (MmpGlobalDataPtr->MmpTls->MmpTlsList.Flink != &MmpGlobalDataPtr->MmpTls->MmpTlsList) {
             assert(NtCurrentTeb()->ThreadLocalStoragePointer == nullptr);
         }
     }
-
-    RtlReleaseSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
 
     //
     // Call the original function
@@ -405,9 +361,12 @@ BOOL NTAPI PreHookNtSetInformationProcess() {
         for (DWORD i = 0; i < CurrentThreadCount; ++i) {
             auto& current = ProcessTlsInformation->ThreadData[i];
             current.TlsVector = (PVOID*)MmpAllocateTlsp();
-            if (!current.TlsVector) {
+            if (current.TlsVector) {
+                current.TlsVector = ((PTLS_VECTOR)current.TlsVector)->ModuleTlsData;
+            }
+            else {
                 for (DWORD j = 0; j < i; ++j) {
-                    RtlFreeHeap(RtlProcessHeap(), 0, ProcessTlsInformation->ThreadData[j].TlsVector);
+                    RtlFreeHeap(RtlProcessHeap(), 0, CONTAINING_RECORD(ProcessTlsInformation->ThreadData[j].TlsVector, TLS_VECTOR, TLS_VECTOR::ModuleTlsData));
                 }
 
                 success = FALSE;
@@ -847,6 +806,8 @@ BOOL NTAPI MmpTlsInitialize() {
     DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginNtSetInformationProcess, HookNtSetInformationProcess);
     DetourAttach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginRtlUserThreadStart, HookRtlUserThreadStart);
     DetourTransactionCommit();
+
+    MmpTlsFiberInitialize();
 
     return TRUE;
 }

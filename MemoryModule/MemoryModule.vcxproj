@@ -49,6 +49,7 @@
     <ClCompile Include="LoadDllMemoryApi.cpp" />
     <ClCompile Include="MemoryModule.cpp" />
     <ClCompile Include="MmpDotNet.cpp" />
+    <ClCompile Include="MmpTlsFiber.cpp" />
     <ClCompile Include="MmpLdrpTls.cpp" />
     <ClCompile Include="MmpTls.cpp" />
     <ClCompile Include="Loader.cpp" />
@@ -109,12 +110,14 @@
     <ClInclude Include="LoaderPrivate.h" />
     <ClInclude Include="MemoryModule.h" />
     <ClInclude Include="MmpDotNet.h" />
+    <ClInclude Include="MmpTlsFiber.h" />
     <ClInclude Include="MmpGlobalData.h" />
     <ClInclude Include="MmpTls.h" />
     <ClInclude Include="Loader.h" />
     <ClInclude Include="BaseAddressIndex.h" />
     <ClInclude Include="InvertedFunctionTable.h" />
     <ClInclude Include="LdrEntry.h" />
+    <ClInclude Include="MmpTlsp.h" />
     <ClInclude Include="ReflectiveDLLInjection.h" />
     <ClInclude Include="ReflectiveLoader.h" />
     <ClInclude Include="stdafx.h" />
