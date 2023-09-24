@@ -276,6 +276,7 @@ VOID NTAPI HookLdrShutdownThread(VOID) {
 
     PLIST_ENTRY entry;
     PMMP_TLSP_RECORD record = nullptr;
+    BOOL postpone = IsThreadAFiber();
 
     //
     // Find our tlsp record
