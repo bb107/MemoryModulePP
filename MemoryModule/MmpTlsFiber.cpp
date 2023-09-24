@@ -23,7 +23,7 @@ DWORD WINAPI MmpReleasePostponedTlsWorker(PVOID) {
 	DWORD waitTime = INFINITE;
 
 	while (true) {
-		WaitForSingleObject(MmpPostponedTlsEvent, waitTime);
+		DWORD signal = WaitForSingleObject(MmpPostponedTlsEvent, waitTime);
 
 		EnterCriticalSection(&MmpPostponedTlsLock);
 
@@ -70,6 +70,15 @@ DWORD WINAPI MmpReleasePostponedTlsWorker(PVOID) {
 	return 0;
 }
 
+DWORD WINAPI MmpReleasePostponedTlsWorker_Wrap(PVOID) {
+	__try {
+		return MmpReleasePostponedTlsWorker(nullptr);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return 0;
+	}
+}
+
 VOID WINAPI MmpQueuePostponedTls(PMMP_TLSP_RECORD record) {
 	MMP_POSTPONED_TLS item;
 
@@ -101,5 +110,5 @@ VOID MmpTlsFiberInitialize() {
 	InitializeCriticalSection(&MmpPostponedTlsLock);
 	MmpPostponedTlsEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-	CreateThread(nullptr, 0, MmpReleasePostponedTlsWorker, nullptr, 0, nullptr);
+	CreateThread(nullptr, 0, MmpReleasePostponedTlsWorker_Wrap, nullptr, 0, nullptr);
 }
