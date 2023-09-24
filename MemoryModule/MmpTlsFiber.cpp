@@ -20,9 +20,10 @@ CRITICAL_SECTION MmpPostponedTlsLock;
 DWORD WINAPI MmpReleasePostponedTlsWorker(PVOID) {
 
 	DWORD code;
+	DWORD waitTime = INFINITE;
 
 	while (true) {
-		WaitForSingleObject(MmpPostponedTlsEvent, INFINITE);
+		WaitForSingleObject(MmpPostponedTlsEvent, waitTime);
 
 		EnterCriticalSection(&MmpPostponedTlsLock);
 
@@ -60,6 +61,8 @@ DWORD WINAPI MmpReleasePostponedTlsWorker(PVOID) {
 			}
 
 		}
+
+		waitTime = MmpPostponedTlsList.empty() ? INFINITE : 1000;
 
 		LeaveCriticalSection(&MmpPostponedTlsLock);
 	}

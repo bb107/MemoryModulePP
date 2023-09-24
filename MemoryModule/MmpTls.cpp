@@ -274,7 +274,6 @@ HookRtlUserThreadStart(
 
 VOID NTAPI HookLdrShutdownThread(VOID) {
 
-    PLIST_ENTRY entry;
     PMMP_TLSP_RECORD record = nullptr;
 
     //
