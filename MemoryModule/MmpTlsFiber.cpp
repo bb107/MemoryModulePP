@@ -12,7 +12,7 @@ typedef struct _MMP_POSTPONED_TLS {
 
 }MMP_POSTPONED_TLS, * PMMP_POSTPONED_TLS;
 
-std::vector<MMP_POSTPONED_TLS>MmpPostponedTlsList;
+std::vector<MMP_POSTPONED_TLS>* MmpPostponedTlsList;
 
 HANDLE MmpPostponedTlsEvent;
 CRITICAL_SECTION MmpPostponedTlsLock;
@@ -23,13 +23,13 @@ DWORD WINAPI MmpReleasePostponedTlsWorker(PVOID) {
 	DWORD waitTime = INFINITE;
 
 	while (true) {
-		DWORD signal = WaitForSingleObject(MmpPostponedTlsEvent, waitTime);
+		WaitForSingleObject(MmpPostponedTlsEvent, waitTime);
 
 		EnterCriticalSection(&MmpPostponedTlsLock);
 
-		auto iter = MmpPostponedTlsList.begin();
+		auto iter = MmpPostponedTlsList->begin();
 
-		while (iter != MmpPostponedTlsList.end()) {
+		while (iter != MmpPostponedTlsList->end()) {
 			const auto& item = *iter;
 			GetExitCodeThread(item.hThread, &code);
 
@@ -57,12 +57,12 @@ DWORD WINAPI MmpReleasePostponedTlsWorker(PVOID) {
 				RtlReleaseSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
 
 				CloseHandle(item.hThread);
-				iter = MmpPostponedTlsList.erase(iter);
+				iter = MmpPostponedTlsList->erase(iter);
 			}
 
 		}
 
-		waitTime = MmpPostponedTlsList.empty() ? INFINITE : 1000;
+		waitTime = MmpPostponedTlsList->empty() ? INFINITE : 1000;
 
 		LeaveCriticalSection(&MmpPostponedTlsLock);
 	}
@@ -100,7 +100,7 @@ VOID WINAPI MmpQueuePostponedTls(PMMP_TLSP_RECORD record) {
 
 	EnterCriticalSection(&MmpPostponedTlsLock);
 	
-	MmpPostponedTlsList.push_back(item);
+	MmpPostponedTlsList->push_back(item);
 	SetEvent(MmpPostponedTlsEvent);
 	
 	LeaveCriticalSection(&MmpPostponedTlsLock);
@@ -109,6 +109,7 @@ VOID WINAPI MmpQueuePostponedTls(PMMP_TLSP_RECORD record) {
 VOID MmpTlsFiberInitialize() {
 	InitializeCriticalSection(&MmpPostponedTlsLock);
 	MmpPostponedTlsEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	MmpPostponedTlsList = new(HeapAlloc(GetProcessHeap(), 0, sizeof(std::vector<MMP_POSTPONED_TLS>))) std::vector<MMP_POSTPONED_TLS>();
 
 	CreateThread(nullptr, 0, MmpReleasePostponedTlsWorker_Wrap, nullptr, 0, nullptr);
 }
