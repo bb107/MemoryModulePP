@@ -333,12 +333,21 @@ NTSTATUS MmpAllocateGlobalData() {
 	SIZE_T ViewSize = 0;
 	PTEB teb = NtCurrentTeb();
 
-	swprintf_s(
-		buffer,
-		L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%p",
-		NtCurrentPeb()->SessionId,
-		(PVOID)(~(ULONG_PTR)teb->ClientId.UniqueProcess ^ (ULONG_PTR)teb->ProcessEnvironmentBlock->ProcessHeap)
-	);
+	if (NtCurrentPeb()->SessionId == 0) {
+		swprintf_s(
+			buffer,
+			L"\\BaseNamedObjects\\MMPP*%p",
+			(PVOID)(~(ULONG_PTR)teb->ClientId.UniqueProcess ^ (ULONG_PTR)teb->ProcessEnvironmentBlock->ProcessHeap)
+		);
+	}
+	else {
+		swprintf_s(
+			buffer,
+			L"\\Sessions\\%d\\BaseNamedObjects\\MMPP*%p",
+			NtCurrentPeb()->SessionId,
+			(PVOID)(~(ULONG_PTR)teb->ClientId.UniqueProcess ^ (ULONG_PTR)teb->ProcessEnvironmentBlock->ProcessHeap)
+		);
+	}
 
 	RtlInitUnicodeString(&us, buffer);
 	InitializeObjectAttributes(&oa, &us, 0, nullptr, nullptr);
