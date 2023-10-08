@@ -21,6 +21,9 @@
 //memory module base support
 #include "MemoryModule.h"
 
+//import table support
+#include "ImportTable.h"
+
 //LDR_DATA_TABLE_ENTRY
 #include "LdrEntry.h"
 
