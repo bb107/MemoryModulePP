@@ -72,6 +72,15 @@ typedef struct _MMP_FUNCTIONS {
 	decltype(&MmpReleaseTlsEntry) _MmpReleaseTlsEntry;
 }MMP_FUNCTIONS, * PMMP_FUNCTIONS;
 
+//ImportTable.cpp
+typedef struct _MMP_IAT_DATA {
+
+	LIST_ENTRY MmpIatResolverList;
+	CRITICAL_SECTION MmpIatResolverListLock;
+	MM_IAT_RESOLVER MmpIatResolverHead;
+
+}MMP_IAT_DATA, * PMMP_IAT_DATA;
+
 typedef enum class _WINDOWS_VERSION :BYTE {
 	null,
 	xp,
@@ -86,8 +95,12 @@ typedef enum class _WINDOWS_VERSION :BYTE {
 	invalid
 }WINDOWS_VERSION;
 
-#define MEMORY_MODULE_MAJOR_VERSION 1
-#define MEMORY_MODULE_MINOR_VERSION 3
+#define MEMORY_MODULE_MAKE_PREVIEW(MinorVersion) (0x8000|(MinorVersion))
+#define MEMORY_MODULE_IS_PREVIEW(MinorVersion) (!!(0x8000&(MinorVersion)))
+#define MEMORY_MODULE_GET_MINOR_VERSION(MinorVersion) (~0x8000&(MinorVersion))
+
+#define MEMORY_MODULE_MAJOR_VERSION 2
+#define MEMORY_MODULE_MINOR_VERSION MEMORY_MODULE_MAKE_PREVIEW(0)
 
 typedef struct _MMP_GLOBAL_DATA {
 
@@ -122,6 +135,8 @@ typedef struct _MMP_GLOBAL_DATA {
 
 	PMMP_FUNCTIONS MmpFunctions;
 
+	PMMP_IAT_DATA MmpIat;
+
 }MMP_GLOBAL_DATA, * PMMP_GLOBAL_DATA;
 
 #define MMP_GLOBAL_DATA_SIZE (\
@@ -131,7 +146,8 @@ typedef struct _MMP_GLOBAL_DATA {
 	sizeof(MMP_LDR_ENTRY_DATA) + \
 	sizeof(MMP_TLS_DATA) + \
 	sizeof(MMP_DOT_NET_DATA) + \
-	sizeof(PMMP_FUNCTIONS)\
+	sizeof(MMP_FUNCTIONS) + \
+	sizeof(PMMP_IAT_DATA)\
 )
 
 extern PMMP_GLOBAL_DATA MmpGlobalDataPtr;

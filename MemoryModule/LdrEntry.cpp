@@ -151,7 +151,8 @@ BOOL NTAPI RtlInitializeLdrDataTableEntry(
 		entry->DdagNode->LoadCount = 1;
 		if (IsWin8) ((_LDR_DDAG_NODE_WIN8*)(entry->DdagNode))->ReferenceCount = 1;
 		entry->ImageDll = entry->LoadNotificationsSent = entry->EntryProcessed =
-			entry->InLegacyLists = entry->InIndexes = entry->ProcessAttachCalled = true;
+			entry->InLegacyLists = entry->InIndexes = true;
+		entry->ProcessAttachCalled = headers->OptionalHeader.AddressOfEntryPoint != 0;
 		entry->InExceptionTable = !(dwFlags & LOAD_FLAGS_NOT_ADD_INVERTED_FUNCTION);
 		entry->CorImage = CorImage;
 		entry->CorILOnly = CorIL;
@@ -184,7 +185,10 @@ BOOL NTAPI RtlInitializeLdrDataTableEntry(
 		LdrEntry->EntryPoint = (PLDR_INIT_ROUTINE)((size_t)BaseAddress + headers->OptionalHeader.AddressOfEntryPoint);
 		LdrEntry->ObsoleteLoadCount = 1;
 		if (!FlagsProcessed) {
-			LdrEntry->Flags = LDRP_IMAGE_DLL | LDRP_ENTRY_INSERTED | LDRP_ENTRY_PROCESSED | LDRP_PROCESS_ATTACH_CALLED;
+			LdrEntry->Flags = LDRP_IMAGE_DLL | LDRP_ENTRY_INSERTED | LDRP_ENTRY_PROCESSED;
+
+			if (headers->OptionalHeader.AddressOfEntryPoint != 0)LdrEntry->Flags |= LDRP_PROCESS_ATTACH_CALLED;
+
 			if (CorImage)LdrEntry->Flags |= LDRP_COR_IMAGE;
 		}
 		InitializeListHead(&LdrEntry->HashLinks);

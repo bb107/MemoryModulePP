@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <cmath>
 
 NTSTATUS NTAPI LdrMapDllMemory(
 	_In_ HMEMORYMODULE ViewBase,
@@ -64,6 +65,7 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	if (dwFlags & LOAD_FLAGS_USE_DLL_NAME && (!DllName || !DllFullName))return STATUS_INVALID_PARAMETER_3;
 
 	if (DllName) {
+		int length = (int)wcslen(DllName);
 		PLIST_ENTRY ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList, ListEntry = ListHead->Flink;
 		PIMAGE_NT_HEADERS h1 = RtlImageNtHeader(BufferAddress), h2 = nullptr;
 		if (!h1)return STATUS_INVALID_IMAGE_FORMAT;
@@ -74,11 +76,19 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 
 			/* Check if it's being unloaded */
 			if (!CurEntry->InMemoryOrderLinks.Flink) continue;
+
+			auto dist = (CurEntry->BaseDllName.Length / sizeof(wchar_t)) - length;
+			bool equal = false;
+			if (dist == 0 || dist == 4) {
+				equal = !_wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, length);
+			}
+			else {
+				continue;
+			}
 			
 			/* Check if name matches */
-			if (!_wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, (CurEntry->BaseDllName.Length / sizeof(wchar_t)) - 4) ||
-				!_wcsnicmp(DllName, CurEntry->BaseDllName.Buffer, CurEntry->BaseDllName.Length / sizeof(wchar_t))) {
-			
+			if (equal) {
+
 				/* Let's compare their headers */
 				if (!(h2 = RtlImageNtHeader(CurEntry->DllBase)))continue;
 				if (!(module = MapMemoryModuleHandle((HMEMORYMODULE)CurEntry->DllBase)))continue;

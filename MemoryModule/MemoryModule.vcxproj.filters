@@ -102,6 +102,12 @@
     <ClCompile Include="ReflectiveLoader.c">
       <Filter>Source Files\3rdparty\ReflectiveLoader</Filter>
     </ClCompile>
+    <ClCompile Include="MmpTlsFiber.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ImportTable.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MemoryModule.h">
@@ -243,6 +249,15 @@
       <Filter>Header Files\3rdparty\ReflectiveLoader</Filter>
     </ClInclude>
     <ClInclude Include="LoaderPrivate.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MmpTlsFiber.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MmpTlsp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ImportTable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
