@@ -171,35 +171,19 @@ NTSTATUS MemorySetSectionProtection(
 	NTSTATUS status = STATUS_SUCCESS;
 	PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(lpNtHeaders);
 
-	//
-	// Determine whether it is a .NET assembly
-	//
-	auto& com = lpNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
-	bool CorImage = com.Size && com.VirtualAddress;
-
 	for (DWORD i = 0; i < lpNtHeaders->FileHeader.NumberOfSections; ++i, ++section) {
 		LPVOID address = LPBYTE(base) + section->VirtualAddress;
 		SIZE_T size = AlignValueUp(section->Misc.VirtualSize, lpNtHeaders->OptionalHeader.SectionAlignment);
 
-		if (section->Characteristics & IMAGE_SCN_MEM_DISCARDABLE && !CorImage) {
-			//
-			// If it is a .NET assembly, we cannot release this memory block
-			//
-#pragma warning(disable:6250)
-			VirtualFree(address, size, MEM_DECOMMIT);
-#pragma warning(default:6250)
-		}
-		else {
-			BOOL executable = (section->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0,
-				readable = (section->Characteristics & IMAGE_SCN_MEM_READ) != 0,
-				writeable = (section->Characteristics & IMAGE_SCN_MEM_WRITE) != 0;
-			DWORD protect = ProtectionFlags[executable][readable][writeable], oldProtect;
+		BOOL executable = (section->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0,
+			readable = (section->Characteristics & IMAGE_SCN_MEM_READ) != 0,
+			writeable = (section->Characteristics & IMAGE_SCN_MEM_WRITE) != 0;
+		DWORD protect = ProtectionFlags[executable][readable][writeable], oldProtect;
 
-			if (section->Characteristics & IMAGE_SCN_MEM_NOT_CACHED) protect |= PAGE_NOCACHE;
+		if (section->Characteristics & IMAGE_SCN_MEM_NOT_CACHED) protect |= PAGE_NOCACHE;
 
-			status = NtProtectVirtualMemory(NtCurrentProcess(), &address, &size, protect, &oldProtect);
-			if (!NT_SUCCESS(status))break;
-		}
+		status = NtProtectVirtualMemory(NtCurrentProcess(), &address, &size, protect, &oldProtect);
+		if (!NT_SUCCESS(status))break;
 	}
 
 	return status;
