@@ -47,7 +47,7 @@ typedef struct _MEMORYMODULE {
 	LPBYTE codeBase;						//codeBase == ImageBase
 	PVOID lpReserved;
 
-	HMODULE* hModulesList;					//Import module handles
+	PVOID hModulesList; 					//Import module handles
 	DWORD dwModulesCount;					//number of module handles
 	DWORD dwReferenceCount;
 
@@ -69,12 +69,6 @@ extern "C" {
 		_Out_ HMEMORYMODULE* MemoryModuleHandle,
 		_In_ LPCVOID data,
 		_In_ DWORD size
-	);
-
-	NTSTATUS MemoryResolveImportTable(
-		_In_ LPBYTE base,
-		_In_ PIMAGE_NT_HEADERS lpNtHeaders,
-		_In_ PMEMORYMODULE hMemoryModule
 	);
 
 	NTSTATUS MemorySetSectionProtection(

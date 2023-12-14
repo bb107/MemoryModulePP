@@ -45,6 +45,7 @@
     <ClCompile Include="..\3rdparty\Detours\disolx86.cpp" />
     <ClCompile Include="..\3rdparty\Detours\image.cpp" />
     <ClCompile Include="..\3rdparty\Detours\modules.cpp" />
+    <ClCompile Include="ImportTable.cpp" />
     <ClCompile Include="Initialize.cpp" />
     <ClCompile Include="LoadDllMemoryApi.cpp" />
     <ClCompile Include="MemoryModule.cpp" />
@@ -106,6 +107,7 @@
     <ClInclude Include="..\3rdparty\phnt\include\phnt_windows.h" />
     <ClInclude Include="..\3rdparty\phnt\include\subprocesstag.h" />
     <ClInclude Include="..\3rdparty\phnt\include\winsta.h" />
+    <ClInclude Include="ImportTable.h" />
     <ClInclude Include="LoadDllMemoryApi.h" />
     <ClInclude Include="LoaderPrivate.h" />
     <ClInclude Include="MemoryModule.h" />

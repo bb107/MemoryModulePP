@@ -5,6 +5,10 @@
 
 PMMP_GLOBAL_DATA MmpGlobalDataPtr;
 
+#if MEMORY_MODULE_IS_PREVIEW(MEMORY_MODULE_MINOR_VERSION)
+#pragma message("WARNING: You are using a preview version of MemoryModulePP.")
+#endif
+
 PRTL_RB_TREE FindLdrpModuleBaseAddressIndex() {
     PRTL_RB_TREE LdrpModuleBaseAddressIndex = nullptr;
     PLDR_DATA_TABLE_ENTRY_WIN10 nt10 = decltype(nt10)(MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry);
@@ -427,8 +431,10 @@ NTSTATUS InitializeLockHeld() {
 		status = MmpAllocateGlobalData();
 		if (!NT_SUCCESS(status)) {
 			if (status == STATUS_ALREADY_INITIALIZED) {
-				if ((MmpGlobalDataPtr->MajorVersion < MEMORY_MODULE_MAJOR_VERSION) ||
-					(MmpGlobalDataPtr->MajorVersion == MEMORY_MODULE_MAJOR_VERSION && MmpGlobalDataPtr->MinorVersion < MEMORY_MODULE_MINOR_VERSION)) {
+				if ((MmpGlobalDataPtr->MajorVersion != MEMORY_MODULE_MAJOR_VERSION) ||
+					MEMORY_MODULE_IS_PREVIEW(MmpGlobalDataPtr->MinorVersion) != MEMORY_MODULE_IS_PREVIEW(MEMORY_MODULE_MINOR_VERSION) ||
+					(MEMORY_MODULE_IS_PREVIEW(MEMORY_MODULE_MINOR_VERSION) ? MmpGlobalDataPtr->MinorVersion != MEMORY_MODULE_MINOR_VERSION :
+						MmpGlobalDataPtr->MinorVersion < MEMORY_MODULE_MINOR_VERSION)) {
 					status = STATUS_NOT_SUPPORTED;
 				}
 				else {
@@ -458,6 +464,7 @@ NTSTATUS InitializeLockHeld() {
 		MmpGlobalDataPtr->MmpTls = (PMMP_TLS_DATA)((LPBYTE)MmpGlobalDataPtr->MmpLdrEntry + sizeof(MMP_LDR_ENTRY_DATA));
 		MmpGlobalDataPtr->MmpDotNet = (PMMP_DOT_NET_DATA)((LPBYTE)MmpGlobalDataPtr->MmpTls + sizeof(MMP_TLS_DATA));
 		MmpGlobalDataPtr->MmpFunctions = (PMMP_FUNCTIONS)((LPBYTE)MmpGlobalDataPtr->MmpDotNet + sizeof(MMP_DOT_NET_DATA));
+		MmpGlobalDataPtr->MmpIat = (PMMP_IAT_DATA)((LPBYTE)MmpGlobalDataPtr->MmpFunctions + sizeof(MMP_FUNCTIONS));
 
 		PLDR_DATA_TABLE_ENTRY pNtdllEntry = RtlFindLdrTableEntryByBaseName(L"ntdll.dll");
 		MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry = pNtdllEntry;
@@ -479,6 +486,14 @@ NTSTATUS InitializeLockHeld() {
 		MmpGlobalDataPtr->MmpFunctions->_LdrUnloadDllMemoryAndExitThread = LdrUnloadDllMemoryAndExitThread;
 		MmpGlobalDataPtr->MmpFunctions->_MmpHandleTlsData = MmpHandleTlsData;
 		MmpGlobalDataPtr->MmpFunctions->_MmpReleaseTlsEntry = MmpReleaseTlsEntry;
+
+		InitializeCriticalSection(&MmpGlobalDataPtr->MmpIat->MmpIatResolverListLock);
+		InitializeListHead(&MmpGlobalDataPtr->MmpIat->MmpIatResolverList);
+		InitializeListHead(&MmpGlobalDataPtr->MmpIat->MmpIatResolverHead.InMmpIatResolverList);
+		MmpGlobalDataPtr->MmpIat->MmpIatResolverHead.LoadLibraryProv = LoadLibraryA;
+		MmpGlobalDataPtr->MmpIat->MmpIatResolverHead.FreeLibraryProv = FreeLibrary;
+		MmpGlobalDataPtr->MmpIat->MmpIatResolverHead.ReferenceCount = 1;
+		InsertTailList(&MmpGlobalDataPtr->MmpIat->MmpIatResolverList, &MmpGlobalDataPtr->MmpIat->MmpIatResolverHead.InMmpIatResolverList);
 
 		MmpTlsInitialize();
 
