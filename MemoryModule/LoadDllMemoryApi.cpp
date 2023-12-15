@@ -51,7 +51,7 @@ HMEMORYMODULE WINAPI LoadLibraryMemoryExA(
 			mbstowcs_s(nullptr, _DllFullName, size, DllFullName, size);
 		}
 
-		result = LoadLibraryMemoryExW(BufferAddress, 0, _DllName, _DllFullName, 0);
+		result = LoadLibraryMemoryExW(BufferAddress, 0, _DllName, _DllFullName, Flags);
 	} while (false);
 
 	RtlFreeHeap(heap, 0, _DllName);
