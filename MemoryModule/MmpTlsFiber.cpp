@@ -27,42 +27,48 @@ DWORD WINAPI MmpReleasePostponedTlsWorker(PVOID) {
 
 		EnterCriticalSection(&MmpPostponedTlsLock);
 
-		auto iter = MmpPostponedTlsList->begin();
+		if (MmpPostponedTlsList) {
+			auto iter = MmpPostponedTlsList->begin();
 
-		while (iter != MmpPostponedTlsList->end()) {
-			const auto& item = *iter;
-			GetExitCodeThread(item.hThread, &code);
+			while (iter != MmpPostponedTlsList->end()) {
+				const auto& item = *iter;
+				GetExitCodeThread(item.hThread, &code);
 
-			if (code == STILL_ACTIVE) {
-				++iter;
-			}
-			else {
+				if (code == STILL_ACTIVE) {
+					++iter;
+				}
+				else {
 
-				RtlAcquireSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
+					RtlAcquireSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
 
-				auto TlspMmpBlock = (PVOID*)item.lpOldTlsVector->ModuleTlsData;
-				auto entry = MmpGlobalDataPtr->MmpTls->MmpTlsList.Flink;
-				while (entry != &MmpGlobalDataPtr->MmpTls->MmpTlsList) {
+					auto TlspMmpBlock = (PVOID*)item.lpOldTlsVector->ModuleTlsData;
+					auto entry = MmpGlobalDataPtr->MmpTls->MmpTlsList.Flink;
+					while (entry != &MmpGlobalDataPtr->MmpTls->MmpTlsList) {
 
-					auto p = CONTAINING_RECORD(entry, TLS_ENTRY, TlsEntryLinks);
-					RtlFreeHeap(RtlProcessHeap(), 0, TlspMmpBlock[p->TlsDirectory.Characteristics]);
+						auto p = CONTAINING_RECORD(entry, TLS_ENTRY, TlsEntryLinks);
+						RtlFreeHeap(RtlProcessHeap(), 0, TlspMmpBlock[p->TlsDirectory.Characteristics]);
 
-					entry = entry->Flink;
+						entry = entry->Flink;
+					}
+
+					RtlFreeHeap(RtlProcessHeap(), 0, CONTAINING_RECORD(item.lpTlsRecord->TlspLdrBlock, TLS_VECTOR, TLS_VECTOR::ModuleTlsData));
+					RtlFreeHeap(RtlProcessHeap(), 0, item.lpTlsRecord);
+					RtlFreeHeap(RtlProcessHeap(), 0, item.lpOldTlsVector);
+
+					RtlReleaseSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
+
+					CloseHandle(item.hThread);
+					iter = MmpPostponedTlsList->erase(iter);
 				}
 
-				RtlFreeHeap(RtlProcessHeap(), 0, CONTAINING_RECORD(item.lpTlsRecord->TlspLdrBlock, TLS_VECTOR, TLS_VECTOR::ModuleTlsData));
-				RtlFreeHeap(RtlProcessHeap(), 0, item.lpTlsRecord);
-				RtlFreeHeap(RtlProcessHeap(), 0, item.lpOldTlsVector);
-
-				RtlReleaseSRWLockExclusive(&MmpGlobalDataPtr->MmpTls->MmpTlsListLock);
-
-				CloseHandle(item.hThread);
-				iter = MmpPostponedTlsList->erase(iter);
 			}
 
+			waitTime = MmpPostponedTlsList->empty() ? INFINITE : 1000;
 		}
-
-		waitTime = MmpPostponedTlsList->empty() ? INFINITE : 1000;
+		else {
+			LeaveCriticalSection(&MmpPostponedTlsLock);
+			break;
+		}
 
 		LeaveCriticalSection(&MmpPostponedTlsLock);
 	}
@@ -100,9 +106,26 @@ VOID WINAPI MmpQueuePostponedTls(PMMP_TLSP_RECORD record) {
 
 	EnterCriticalSection(&MmpPostponedTlsLock);
 	
-	MmpPostponedTlsList->push_back(item);
-	SetEvent(MmpPostponedTlsEvent);
+	if (MmpPostponedTlsList) {
+		MmpPostponedTlsList->push_back(item);
+		SetEvent(MmpPostponedTlsEvent);
+	}
+	else {
+		RtlFreeHeap(RtlProcessHeap(), 0, item.lpOldTlsVector);
+	}
 	
+	LeaveCriticalSection(&MmpPostponedTlsLock);
+}
+
+VOID OnExit() {
+	EnterCriticalSection(&MmpPostponedTlsLock);
+
+	MmpPostponedTlsList->~vector();
+	HeapFree(RtlProcessHeap(), 0, MmpPostponedTlsList);
+	MmpPostponedTlsList = nullptr;
+
+	CloseHandle(MmpPostponedTlsEvent);
+
 	LeaveCriticalSection(&MmpPostponedTlsLock);
 }
 
@@ -110,6 +133,8 @@ VOID MmpTlsFiberInitialize() {
 	InitializeCriticalSection(&MmpPostponedTlsLock);
 	MmpPostponedTlsEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 	MmpPostponedTlsList = new(HeapAlloc(GetProcessHeap(), 0, sizeof(std::vector<MMP_POSTPONED_TLS>))) std::vector<MMP_POSTPONED_TLS>();
+	
+	atexit(OnExit);
 
 	CreateThread(nullptr, 0, MmpReleasePostponedTlsWorker_Wrap, nullptr, 0, nullptr);
 }

@@ -62,62 +62,79 @@ PVOID ReadDllFile2(LPCSTR FileName) {
     return nullptr;
 }
 
-#define LIBRARY_PATH "\\\\DESKTOP-1145141919810\\Debug\\"
+int test() {
+    LPVOID buffer = ReadDllFile2("a.vmp.dll");
 
-HMODULE WINAPI MyLoadLibrary(LPCSTR lpModuleName) {
-    HMODULE hModule;
-    PVOID buffer;
+    HMODULE hModule = nullptr;
+    FARPROC pfn = nullptr;
+    DWORD MemoryModuleFeatures = 0;
 
-    if (0 == _stricmp(lpModuleName, "CTestClassLibrary1.dll")) {
-        buffer = ReadDllFile(LIBRARY_PATH"CTestClassLibrary1.dll");
+    typedef int(*_exception)(int code);
+    _exception exception = nullptr;
+    HRSRC hRsrc;
+    DWORD SizeofRes;
+    HGLOBAL gRes;
+    char str[10];
+
+    LdrQuerySystemMemoryModuleFeatures(&MemoryModuleFeatures);
+    if (MemoryModuleFeatures != MEMORY_FEATURE_ALL) {
+        printf("not support all features on this version of windows.\n");
     }
-    else if (0 == _stricmp(lpModuleName, "CTestClassLibrary2.dll")) {
-        buffer = ReadDllFile(LIBRARY_PATH"CTestClassLibrary2.dll");
+
+    if (!NT_SUCCESS(LdrLoadDllMemoryExW(&hModule, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
+
+    //forward export
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket")); //ws2_32.WSASocketW
+    pfn = (decltype(pfn))(GetProcAddress(hModule, "VerifyTruse")); //wintrust.WinVerifyTrust
+
+    //exception
+    exception = (_exception)GetProcAddress(hModule, "exception");
+    if (exception) {
+        for (int i = 0; i < 5; ++i)exception(i);
     }
-    else if (0 == _stricmp(lpModuleName, "CTestClassLibrary1Dep.dll")) {
-        buffer = ReadDllFile(LIBRARY_PATH"CTestClassLibrary1Dep.dll");
+
+    //tls
+    pfn = GetProcAddress(hModule, "thread");
+    if (pfn && pfn()) {
+        printf("thread test failed.\n");
+    }
+
+    //resource
+    if (!LoadStringA(hModule, 101, str, 10)) {
+        printf("load string failed.\n");
     }
     else {
-        return nullptr;
+        printf("%s\n", str);
     }
-
-    hModule = LoadLibraryMemoryExA(buffer, 0, lpModuleName, nullptr, 0);
-    delete[]buffer;
-    return hModule;
-}
-
-VOID TestImportTableResolver() {
-    
-    //
-    // Register the import table resolver.
-    //
-    HANDLE hResolver = MmRegisterImportTableResolver(MyLoadLibrary, FreeLibraryMemory);
-
-    //
-    //                  |-> CTestClassLibrary1.dll -> CTestClassLibrary1Dep.dll
-    // CTestClient.dll -|
-    //                  |-> CTestClassLibrary2.dll
-    //
-    
-    PVOID Client = ReadDllFile2("CTestClient.dll");
-    HMODULE hm = LoadLibraryMemoryEx(Client, 0, TEXT("CTestClient.dll"), nullptr, 0);
-    delete[]Client;
-
-    if (hm) {
-        auto pfn = GetProcAddress(hm, "TestProc");
-        if (pfn) {
-            pfn();
+    if (!(hRsrc = FindResourceA(hModule, MAKEINTRESOURCEA(102), "BINARY"))) {
+        printf("find binary resource failed.\n");
+    }
+    else {
+        if ((SizeofRes = SizeofResource(hModule, hRsrc)) != 0x10) {
+            printf("invalid res size.\n");
         }
-
-        FreeLibraryMemory(hm);
+        else {
+            if (!(gRes = LoadResource(hModule, hRsrc))) {
+                printf("load res failed.\n");
+            }
+            else {
+                if (!LockResource(gRes))printf("lock res failed.\n");
+                else {
+                    printf("resource test success.\n");
+                }
+            }
+        }
     }
 
-    MmRemoveImportTableResolver(hResolver);
+end:
+    LdrUnloadDllMemory(hModule);
+    delete[]buffer;
+    return 0;
 }
 
 int main() {
     DisplayStatus();
-    TestImportTableResolver();
+    test();
 
     return 0;
 }
