@@ -164,11 +164,6 @@
       </ExcludedFromBuild>
     </ClCompile>
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\MemoryModule\MemoryModule.vcxproj">
-      <Project>{5b1f46db-036e-4a50-af5f-f5d6584d42c6}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

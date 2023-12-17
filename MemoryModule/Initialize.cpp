@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "LoaderPrivate.h"
 #include <wchar.h>
-#include <cassert>
+#include <cstdio>
 
 PMMP_GLOBAL_DATA MmpGlobalDataPtr;
 
@@ -544,7 +544,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
 		if (NT_SUCCESS(Initialize())) {
 			if (lpReserved == (PVOID)-1) {
-				assert(ReflectiveMapDll(hModule));
+				if (!ReflectiveMapDll(hModule)) {
+					RtlRaiseStatus(STATUS_NOT_SUPPORTED);
+				}
 			}
 
 			return TRUE;

@@ -1,8 +1,12 @@
 #include "../MemoryModule/stdafx.h"
 #include "../MemoryModule/LoadDllMemoryApi.h"
 #include <cstdio>
+#pragma comment(lib,"ntdll.lib")
 
-//PMMP_GLOBAL_DATA MmpGlobalDataPtr = *(PMMP_GLOBAL_DATA*)GetProcAddress(GetModuleHandleA("MemoryModule.dll"), "MmpGlobalDataPtr");
+PMMP_GLOBAL_DATA MmpGlobalDataPtr;
+
+decltype(&LdrLoadDllMemoryExW)__LdrLoadDllMemoryExW;
+decltype(&LdrUnloadDllMemory)__LdrUnloadDllMemory;
 
 static void DisplayStatus() {
     printf(
@@ -41,7 +45,10 @@ static PVOID ReadDllFile(LPCSTR FileName) {
         return 0;
     }
     _fseeki64(f, 0, SEEK_SET);
-    fread(buffer = new char[size], 1, size, f);
+
+    buffer = VirtualAlloc(0, size, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+
+    fread(buffer, 1, size, f);
     fclose(f);
     return buffer;
 }
@@ -63,11 +70,10 @@ PVOID ReadDllFile2(LPCSTR FileName) {
 }
 
 int test() {
-    LPVOID buffer = ReadDllFile2("a.vmp.dll");
+    LPVOID buffer = ReadDllFile2("a.dll");
 
     HMODULE hModule = nullptr;
     FARPROC pfn = nullptr;
-    DWORD MemoryModuleFeatures = 0;
 
     typedef int(*_exception)(int code);
     _exception exception = nullptr;
@@ -76,12 +82,7 @@ int test() {
     HGLOBAL gRes;
     char str[10];
 
-    LdrQuerySystemMemoryModuleFeatures(&MemoryModuleFeatures);
-    if (MemoryModuleFeatures != MEMORY_FEATURE_ALL) {
-        printf("not support all features on this version of windows.\n");
-    }
-
-    if (!NT_SUCCESS(LdrLoadDllMemoryExW(&hModule, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
+    if (!NT_SUCCESS(__LdrLoadDllMemoryExW(&hModule, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
 
     //forward export
     pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket")); //ws2_32.WSASocketW
@@ -127,12 +128,44 @@ int test() {
     }
 
 end:
-    LdrUnloadDllMemory(hModule);
-    delete[]buffer;
+    __LdrUnloadDllMemory(hModule);
+    VirtualFree(buffer, 0, MEM_RELEASE);
     return 0;
 }
 
+ULONG_PTR ReflectiveLoaderOffset() {
+    ULONG_PTR offset = 0;
+
+    auto hm = LoadLibrary(L"MemoryModule.dll");
+    if (hm) {
+        auto pfn = GetProcAddress(hm, "ReflectiveLoader");
+        offset = ULONG_PTR(pfn) - ULONG_PTR(hm);
+
+        auto header = RtlImageNtHeader(hm);
+        auto section = IMAGE_FIRST_SECTION(header);
+        for (int i = 0; i < header->FileHeader.NumberOfSections; ++i, ++section) {
+            if (offset >= section->VirtualAddress && offset < section->VirtualAddress + section->SizeOfRawData) {
+                offset = ULONG_PTR(pfn) - (ULONG_PTR(hm) + section->VirtualAddress) + section->PointerToRawData;
+                break;
+            }
+        }
+    }
+
+    return offset;
+}
+
+typedef ULONG_PTR(WINAPI* LOADER)(PVOID);
+
 int main() {
+    printf("%08x\n", ReflectiveLoaderOffset());
+    auto buffer = ReadDllFile2("MemoryModule.dll");
+    auto loader = LOADER(ULONG_PTR(buffer) + 0x96e0); //ReflectiveLoaderOffset() -> 0x96e0
+    auto hm = (HMODULE)loader(buffer);
+
+    MmpGlobalDataPtr = *(PMMP_GLOBAL_DATA*)GetProcAddress(hm, "MmpGlobalDataPtr");
+    __LdrLoadDllMemoryExW = (decltype(&LdrLoadDllMemoryExW))GetProcAddress(hm, "LdrLoadDllMemoryExW");
+    __LdrUnloadDllMemory = (decltype(&LdrUnloadDllMemory))GetProcAddress(hm, "LdrUnloadDllMemory");
+    
     DisplayStatus();
     test();
 
