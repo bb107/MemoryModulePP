@@ -1,4 +1,4 @@
-#ifdef _USRDLL
+#if !(defined(_M_ARM) || defined(_M_ARM64) || defined(_USRDLL))
 
 //===============================================================================================//
 // Copyright (c) 2012, Stephen Fewer of Harmony Security (www.harmonysecurity.com)

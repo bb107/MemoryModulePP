@@ -61,16 +61,6 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 //Unload modules previously loaded from memory
 NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress);
 
-#if (!defined(_USRDLL) && defined(_MEMORY_MODULE))
-#ifdef _WIN64
-#pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread")
-#pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=LdrUnloadDllMemoryAndExitThread")
-#else
-#pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread=_LdrUnloadDllMemoryAndExitThread@8")
-#pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=_LdrUnloadDllMemoryAndExitThread@8")
-#endif
-#endif
-
 extern "C" {
 	__declspec(noreturn) VOID NTAPI LdrUnloadDllMemoryAndExitThread(
 		_In_ HMEMORYMODULE BaseAddress,
