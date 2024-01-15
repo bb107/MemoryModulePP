@@ -140,6 +140,16 @@ BOOL NTAPI LdrpCallInitializers(PMEMORYMODULE module, DWORD dwReason) {
 			// notify library about attaching to process
 			if (((PLDR_INIT_ROUTINE)(module->codeBase + headers->OptionalHeader.AddressOfEntryPoint))((HINSTANCE)module->codeBase, dwReason, 0)) {
 				module->initialized = TRUE;
+
+				if (dwReason == DLL_PROCESS_ATTACH) {
+					if (MmpGlobalDataPtr->WindowsVersion <= WINDOWS_VERSION::winBlue) {
+						PLDR_DATA_TABLE_ENTRY_WINBLUE(module->LdrEntry)->ProcessAttachCalled = TRUE;
+					}
+					else {
+						PLDR_DATA_TABLE_ENTRY(module->LdrEntry)->Flags |= LDRP_PROCESS_ATTACH_CALLED;
+					}
+				}
+
 				return TRUE;
 			}
 			SetLastError(ERROR_DLL_INIT_FAILED);
