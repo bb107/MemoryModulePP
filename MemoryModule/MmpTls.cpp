@@ -231,7 +231,7 @@ __skip_tls:
     return Context.ThreadStartRoutine(Context.ThreadParameter);
 }
 
-#ifdef _WIN64
+#if (defined(_WIN64) || defined(_M_ARM))
 VOID NTAPI HookRtlUserThreadStart(
     _In_ PTHREAD_START_ROUTINE Function,
     _In_ PVOID Parameter) {
@@ -256,7 +256,7 @@ HookRtlUserThreadStart(
 
         // Context.ThreadParameter = Parameter;
         mov dword ptr ds : [esp + 4] , ebx;
-        
+
         mov eax, MmpUserThreadStart;
         mov ebx, esp;
 

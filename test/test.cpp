@@ -3,11 +3,6 @@
 #include <cstdio>
 #pragma comment(lib,"ntdll.lib")
 
-PMMP_GLOBAL_DATA MmpGlobalDataPtr;
-
-decltype(&LdrLoadDllMemoryExW)__LdrLoadDllMemoryExW;
-decltype(&LdrUnloadDllMemory)__LdrUnloadDllMemory;
-
 static void DisplayStatus() {
     printf(
         "\
@@ -82,7 +77,7 @@ int test() {
     HGLOBAL gRes;
     char str[10];
 
-    if (!NT_SUCCESS(__LdrLoadDllMemoryExW(&hModule, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
+    if (!NT_SUCCESS(LdrLoadDllMemoryExW(&hModule, nullptr, 0, buffer, 0, L"kernel64", nullptr))) goto end;
 
     //forward export
     pfn = (decltype(pfn))(GetProcAddress(hModule, "Socket")); //ws2_32.WSASocketW
@@ -128,45 +123,15 @@ int test() {
     }
 
 end:
-    __LdrUnloadDllMemory(hModule);
+    LdrUnloadDllMemory(hModule);
     VirtualFree(buffer, 0, MEM_RELEASE);
     return 0;
 }
 
-ULONG_PTR ReflectiveLoaderOffset() {
-    ULONG_PTR offset = 0;
-
-    auto hm = LoadLibrary(L"MemoryModule.dll");
-    if (hm) {
-        auto pfn = GetProcAddress(hm, "ReflectiveLoader");
-        offset = ULONG_PTR(pfn) - ULONG_PTR(hm);
-
-        auto header = RtlImageNtHeader(hm);
-        auto section = IMAGE_FIRST_SECTION(header);
-        for (int i = 0; i < header->FileHeader.NumberOfSections; ++i, ++section) {
-            if (offset >= section->VirtualAddress && offset < section->VirtualAddress + section->SizeOfRawData) {
-                offset = ULONG_PTR(pfn) - (ULONG_PTR(hm) + section->VirtualAddress) + section->PointerToRawData;
-                break;
-            }
-        }
-    }
-
-    return offset;
-}
-
-typedef ULONG_PTR(WINAPI* LOADER)(PVOID);
-
 int main() {
-    printf("%08x\n", ReflectiveLoaderOffset());
-    auto buffer = ReadDllFile2("MemoryModule.dll");
-    auto loader = LOADER(ULONG_PTR(buffer) + 0x96e0); //ReflectiveLoaderOffset() -> 0x96e0
-    auto hm = (HMODULE)loader(buffer);
-
-    MmpGlobalDataPtr = *(PMMP_GLOBAL_DATA*)GetProcAddress(hm, "MmpGlobalDataPtr");
-    __LdrLoadDllMemoryExW = (decltype(&LdrLoadDllMemoryExW))GetProcAddress(hm, "LdrLoadDllMemoryExW");
-    __LdrUnloadDllMemory = (decltype(&LdrUnloadDllMemory))GetProcAddress(hm, "LdrUnloadDllMemory");
     
     DisplayStatus();
+
     test();
 
     return 0;

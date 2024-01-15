@@ -1,6 +1,16 @@
 #include "stdafx.h"
 #include <cmath>
 
+#ifdef _USRDLL
+#if (defined(_WIN64) || defined(_M_ARM))
+#pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread")
+#pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=LdrUnloadDllMemoryAndExitThread")
+#else
+#pragma comment(linker,"/export:LdrUnloadDllMemoryAndExitThread=_LdrUnloadDllMemoryAndExitThread@8")
+#pragma comment(linker,"/export:FreeLibraryMemoryAndExitThread=_LdrUnloadDllMemoryAndExitThread@8")
+#endif
+#endif
+
 NTSTATUS NTAPI LdrMapDllMemory(
 	_In_ HMEMORYMODULE ViewBase,
 	_In_ DWORD dwFlags,
