@@ -115,26 +115,7 @@ PMMP_TLSP_RECORD MmpFindTlspRecordLockHeld() {
 
         auto p = CONTAINING_RECORD(entry, MMP_TLSP_RECORD, InMmpThreadLocalStoragePointer);
 
-        if (p->UniqueThread == NtCurrentProcess() && p->TlspLdrBlock == teb->ThreadLocalStoragePointer) {
-            PVOID cookie;
-            LdrLockLoaderLock(LDR_LOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, nullptr, &cookie);
-
-            auto size = CONTAINING_RECORD(p->TlspLdrBlock, TLS_VECTOR, ModuleTlsData)->Length;
-            if ((HANDLE)(ULONG_PTR)size != NtCurrentThreadId()) {
-                RtlCopyMemory(
-                    p->TlspMmpBlock,
-                    p->TlspLdrBlock,
-                    size * sizeof(PVOID)
-                );
-            }
-
-            teb->ThreadLocalStoragePointer = p->TlspMmpBlock;
-            p->UniqueThread = NtCurrentThreadId();
-
-            LdrUnlockLoaderLock(LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, cookie);
-            return p;
-        }
-        else if (p->UniqueThread == NtCurrentThreadId()) {
+        if (p->UniqueThread == NtCurrentThreadId()) {
             assert(p->TlspMmpBlock == teb->ThreadLocalStoragePointer);
             return p;
         }
@@ -145,22 +126,9 @@ PMMP_TLSP_RECORD MmpFindTlspRecordLockHeld() {
     return nullptr;
 }
 
-DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
-
-    THREAD_CONTEXT Context;
+DWORD MmpAllocateTlsLockHeld() {
     bool success = false;
     PMMP_TLSP_RECORD record = nullptr;
-
-    __try {
-        RtlCopyMemory(
-            &Context,
-            lpThreadParameter,
-            sizeof(Context)
-        );
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        return GetExceptionCode();
-    }
 
     if (!NtCurrentTeb()->ThreadLocalStoragePointer) {
         goto __skip_tls;
@@ -250,6 +218,34 @@ DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
     InterlockedIncrement(&MmpGlobalDataPtr->MmpTls->MmpActiveThreadCount);
 
 __skip_tls:
+    return ERROR_SUCCESS;
+}
+
+DWORD NTAPI MmpUserThreadStart(LPVOID lpThreadParameter) {
+
+    THREAD_CONTEXT Context;
+
+    __try {
+        RtlCopyMemory(
+            &Context,
+            lpThreadParameter,
+            sizeof(Context)
+        );
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return GetExceptionCode();
+    }
+
+    PVOID cookie;
+    LdrLockLoaderLock(LDR_LOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, nullptr, &cookie);
+
+    __try {
+        MmpAllocateTlsLockHeld();
+    }
+    __finally {
+        LdrUnlockLoaderLock(LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, cookie);
+    }
+
     return Context.ThreadStartRoutine(Context.ThreadParameter);
 }
 
@@ -544,20 +540,6 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
 
             ProcessTlsInformation->ThreadData[i].Flags = Tls->ThreadData[i].Flags;
             ProcessTlsInformation->ThreadData[i].ThreadId = Tls->ThreadData[i].ThreadId;
-
-            if (!found && Tls->ThreadData[i].Flags == 2) {
-                auto const& LdrTls = Tls->ThreadData[i];
-                auto record = PMMP_TLSP_RECORD(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(MMP_TLSP_RECORD)));
-                assert(record);
-
-                record->TlspLdrBlock = LdrTls.TlsVector;
-                record->TlspMmpBlock = (PVOID*)MmpAllocateTlsp();
-                record->UniqueThread = NtCurrentProcess();
-
-                assert(record->TlspMmpBlock);
-                InsertTailList(&MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer, &record->InMmpThreadLocalStoragePointer);
-            }
-
         }
         LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
 
