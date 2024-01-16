@@ -109,11 +109,33 @@ DWORD NTAPI MmpGetThreadCount() {
 
 PMMP_TLSP_RECORD MmpFindTlspRecordLockHeld() {
     PLIST_ENTRY entry = MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer.Flink;
+    PTEB teb = NtCurrentTeb();
+
     while (entry != &MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer) {
 
         auto p = CONTAINING_RECORD(entry, MMP_TLSP_RECORD, InMmpThreadLocalStoragePointer);
-        if (p->UniqueThread == NtCurrentThreadId()) {
-            assert(p->TlspMmpBlock == NtCurrentTeb()->ThreadLocalStoragePointer);
+
+        if (p->UniqueThread == NtCurrentProcess() && p->TlspLdrBlock == teb->ThreadLocalStoragePointer) {
+            PVOID cookie;
+            LdrLockLoaderLock(LDR_LOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, nullptr, &cookie);
+
+            auto size = CONTAINING_RECORD(p->TlspLdrBlock, TLS_VECTOR, ModuleTlsData)->Length;
+            if ((HANDLE)(ULONG_PTR)size != NtCurrentThreadId()) {
+                RtlCopyMemory(
+                    p->TlspMmpBlock,
+                    p->TlspLdrBlock,
+                    size * sizeof(PVOID)
+                );
+            }
+
+            teb->ThreadLocalStoragePointer = p->TlspMmpBlock;
+            p->UniqueThread = NtCurrentThreadId();
+
+            LdrUnlockLoaderLock(LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, cookie);
+            return p;
+        }
+        else if (p->UniqueThread == NtCurrentThreadId()) {
+            assert(p->TlspMmpBlock == teb->ThreadLocalStoragePointer);
             return p;
         }
 
@@ -520,11 +542,22 @@ NTSTATUS NTAPI HookNtSetInformationProcess(
                 entry = entry->Flink;
             }
 
-            //assert(found);
-            if (found) {
-                ProcessTlsInformation->ThreadData[i].Flags = Tls->ThreadData[i].Flags;
-                ProcessTlsInformation->ThreadData[i].ThreadId = Tls->ThreadData[i].ThreadId;
+            ProcessTlsInformation->ThreadData[i].Flags = Tls->ThreadData[i].Flags;
+            ProcessTlsInformation->ThreadData[i].ThreadId = Tls->ThreadData[i].ThreadId;
+
+            if (!found && Tls->ThreadData[i].Flags == 2) {
+                auto const& LdrTls = Tls->ThreadData[i];
+                auto record = PMMP_TLSP_RECORD(RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(MMP_TLSP_RECORD)));
+                assert(record);
+
+                record->TlspLdrBlock = LdrTls.TlsVector;
+                record->TlspMmpBlock = (PVOID*)MmpAllocateTlsp();
+                record->UniqueThread = NtCurrentProcess();
+
+                assert(record->TlspMmpBlock);
+                InsertTailList(&MmpGlobalDataPtr->MmpTls->MmpThreadLocalStoragePointer, &record->InMmpThreadLocalStoragePointer);
             }
+
         }
         LeaveCriticalSection(&MmpGlobalDataPtr->MmpTls->MmpTlspLock);
 
