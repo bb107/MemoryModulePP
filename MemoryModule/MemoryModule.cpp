@@ -12,7 +12,7 @@
 
 #define GET_HEADER_DICTIONARY(headers, idx)  &headers->OptionalHeader.DataDirectory[idx]
 
-#define AlignValueUp(value, alignment) ((size_t(value) + size_t(alignment) + 1) & ~(size_t(alignment) - 1))
+#define AlignValueUp(value, alignment) ((size_t(value) + size_t(alignment) - 1) & ~(size_t(alignment) - 1))
 
 #define OffsetPointer(data, offset) LPVOID(LPBYTE(data) + ptrdiff_t(offset))
 
