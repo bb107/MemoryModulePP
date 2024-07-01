@@ -34,13 +34,14 @@ BOOLEAN NTAPI RtlIsValidImageBuffer(
 
 BOOLEAN NTAPI VirtualAccessCheck(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
 BOOLEAN NTAPI VirtualAccessCheckNoException(LPCVOID pBuffer, size_t size, ACCESS_MASK protect);
-#define ProbeForRead(pBuffer, size)			VirtualAccessCheck(pBuffer, size, PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)
-#define ProbeForWrite(pBuffer, size)		VirtualAccessCheck(pBuffer, size, PAGE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)
-#define ProbeForReadWrite(pBuffer, size)	VirtualAccessCheck(pBuffer, size, PAGE_EXECUTE_READWRITE | PAGE_READWRITE)
+#define ProbeForRead(pBuffer, size)			VirtualAccessCheck(pBuffer, size, PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE |  PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_WRITECOPY)
+#define ProbeForWrite(pBuffer, size)		VirtualAccessCheck(pBuffer, size, PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
+#define ProbeForReadWrite					ProbeForWrite
 #define ProbeForExecute(pBuffer, size)		VirtualAccessCheck(pBuffer, size, PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
-#define _ProbeForRead(pBuffer, size)		VirtualAccessCheckNoException(pBuffer, size, PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)
-#define _ProbeForWrite(pBuffer, size)		VirtualAccessCheckNoException(pBuffer, size, PAGE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)
-#define _ProbeForReadWrite(pBuffer, size)	VirtualAccessCheckNoException(pBuffer, size, PAGE_EXECUTE_READWRITE | PAGE_READWRITE)
+
+#define _ProbeForRead(pBuffer, size)		VirtualAccessCheckNoException(pBuffer, size, PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE |  PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_WRITECOPY)
+#define _ProbeForWrite(pBuffer, size)		VirtualAccessCheckNoException(pBuffer, size, PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
+#define _ProbeForReadWrite					_ProbeForWrite
 #define _ProbeForExecute(pBuffer, size)		VirtualAccessCheckNoException(pBuffer, size, PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
 
 #define RtlClearBit(BitMapHeader,BitNumber) RtlClearBits((BitMapHeader),(BitNumber),1)
