@@ -285,7 +285,7 @@ NTSTATUS MemoryLoadLibrary(
 			PIMAGE_BASE_RELOCATION_HEADER relocation = (PIMAGE_BASE_RELOCATION_HEADER)(LPBYTE(base) + dir->VirtualAddress);
 
 			if (dir->Size && dir->VirtualAddress) {
-				while (relocation->VirtualAddress > 0) {
+				while ((LPBYTE(relocation) < LPBYTE(base) + dir->VirtualAddress + dir->Size) && relocation->VirtualAddress > 0) {
 					auto relInfo = (_REBASE_INFO*)&relocation->TypeOffset;
 					for (DWORD i = 0; i < relocation->TypeOffsetCount(); ++i, ++relInfo) {
 						switch (relInfo->Type) {
