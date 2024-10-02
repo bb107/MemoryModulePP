@@ -9,3 +9,4 @@ typedef HRESULT(WINAPI* GetFileVersion_T)(
 
 BOOL WINAPI MmpPreInitializeHooksForDotNet();
 BOOL WINAPI MmpInitializeHooksForDotNet();
+VOID WINAPI MmpCleanupDotNetHooks();

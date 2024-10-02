@@ -3,6 +3,7 @@
 
 typedef HMODULE HMEMORYMODULE;
 #include "Loader.h"
+#include "Initialize.h"
 
 #define MemoryModuleToModule(_hMemoryModule_) (_hMemoryModule_)
 

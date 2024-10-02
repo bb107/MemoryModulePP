@@ -798,4 +798,15 @@ BOOL NTAPI MmpTlsInitialize() {
     return TRUE;
 }
 
+VOID NTAPI MmpTlsCleanup() {
+
+    DetourTransactionBegin();
+    DetourUpdateThread(NtCurrentThread());
+    DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginLdrShutdownThread, HookLdrShutdownThread);
+    DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginNtSetInformationProcess, HookNtSetInformationProcess);
+    DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpTls->Hooks.OriginRtlUserThreadStart, HookRtlUserThreadStart);
+    DetourTransactionCommit();
+
+}
+
 #endif

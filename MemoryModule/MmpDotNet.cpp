@@ -443,3 +443,38 @@ BOOL WINAPI MmpInitializeHooksForDotNet() {
 
     return FALSE;
 }
+
+VOID WINAPI MmpCleanupDotNetHooks() {
+    EnterCriticalSection(NtCurrentPeb()->FastPebLock);
+
+    if (MmpGlobalDataPtr->MmpDotNet->PreHooked) {
+        DetourTransactionBegin();
+        DetourUpdateThread(NtCurrentThread());
+
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginCreateFileW, HookCreateFileW);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginGetFileInformationByHandle, HookGetFileInformationByHandle);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginGetFileAttributesExW, HookGetFileAttributesExW);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginGetFileSize, HookGetFileSize);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginGetFileSizeEx, HookGetFileSizeEx);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginCreateFileMappingW, HookCreateFileMappingW);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginMapViewOfFileEx, HookMapViewOfFileEx);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginMapViewOfFile, HookMapViewOfFile);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginUnmapViewOfFile, HookUnmapViewOfFile);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginCloseHandle, HookCloseHandle);
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginGetFileVersion2, HookGetFileVersion);
+
+        DetourTransactionCommit();
+
+        MmpGlobalDataPtr->MmpDotNet->PreHooked = FALSE;
+    }
+
+    if (MmpGlobalDataPtr->MmpDotNet->Initialized) {
+        DetourTransactionBegin();
+        DetourUpdateThread(NtCurrentThread());
+        DetourDetach((PVOID*)&MmpGlobalDataPtr->MmpDotNet->Hooks.OriginGetFileVersion1, HookGetFileVersion);
+        DetourTransactionCommit();
+        MmpGlobalDataPtr->MmpDotNet->Initialized = FALSE;
+    }
+
+    LeaveCriticalSection(NtCurrentPeb()->FastPebLock);
+}
