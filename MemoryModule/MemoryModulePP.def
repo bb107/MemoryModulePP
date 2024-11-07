@@ -1,5 +1,9 @@
 LIBRARY
 EXPORTS
+
+MmInitialize
+MmCleanup
+
 LoadLibraryMemory
 LoadLibraryMemoryExA
 LoadLibraryMemoryExW

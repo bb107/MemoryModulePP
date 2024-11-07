@@ -61,7 +61,14 @@ NTSTATUS NTAPI LdrLoadDllMemoryExW(
 	__try {
 		*BaseAddress = nullptr;
 		if (LdrEntry)*LdrEntry = nullptr;
-		if (!RtlIsValidImageBuffer(BufferAddress, &BufferSize) && !(dwFlags & LOAD_FLAGS_PASS_IMAGE_CHECK))status = STATUS_INVALID_IMAGE_FORMAT;
+
+		if (!RtlIsValidImageBuffer(BufferAddress, &BufferSize) && !(dwFlags & LOAD_FLAGS_PASS_IMAGE_CHECK)) {
+			status = STATUS_INVALID_IMAGE_FORMAT;
+		}
+
+		if (MmpGlobalDataPtr == nullptr) {
+			status = STATUS_INVALID_PARAMETER;
+		}
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {
 		status = GetExceptionCode();
@@ -226,6 +233,11 @@ NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress) {
 		//Not a memory module loaded via LdrLoadDllMemory
 		if (!module || !module->loadFromLdrLoadDllMemory) {
 			status = STATUS_INVALID_HANDLE;
+			break;
+		}
+
+		if (MmpGlobalDataPtr == nullptr) {
+			status = STATUS_INVALID_PARAMETER;
 			break;
 		}
 

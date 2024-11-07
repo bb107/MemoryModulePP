@@ -438,6 +438,7 @@ NTSTATUS InitializeLockHeld() {
 					status = STATUS_NOT_SUPPORTED;
 				}
 				else {
+					++MmpGlobalDataPtr->ReferenceCount;
 					status = STATUS_SUCCESS;
 				}
 			}
@@ -448,6 +449,7 @@ NTSTATUS InitializeLockHeld() {
         MmpGlobalDataPtr->MajorVersion = MEMORY_MODULE_MAJOR_VERSION;
         MmpGlobalDataPtr->MinorVersion = MEMORY_MODULE_MINOR_VERSION;
 		MmpGlobalDataPtr->BaseAddress = MmpGlobalDataPtr;
+		MmpGlobalDataPtr->ReferenceCount = 1;
 
 		GetSystemInfo(&MmpGlobalDataPtr->SystemInfo);
 
@@ -504,14 +506,72 @@ NTSTATUS InitializeLockHeld() {
     return status;
 }
 
-NTSTATUS NTAPI Initialize() {
+NTSTATUS NTAPI MmInitialize() {
     NTSTATUS status;
 
-    RtlAcquirePebLock();
-    status = InitializeLockHeld();
-    RtlReleasePebLock();
+	PVOID cookie;
+	LdrLockLoaderLock(LDR_LOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, nullptr, &cookie);
+
+	__try {
+		status = InitializeLockHeld();
+	}
+	__finally {
+		LdrUnlockLoaderLock(LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, cookie);
+	}
 
     return status;
+}
+
+NTSTATUS CleanupLockHeld() {
+
+	PLIST_ENTRY ListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList, ListEntry = ListHead->Flink;
+	PLDR_DATA_TABLE_ENTRY CurEntry;
+
+	while (ListEntry != ListHead) {
+		CurEntry = CONTAINING_RECORD(ListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+		ListEntry = ListEntry->Flink;
+
+		if (IsValidMemoryModuleHandle((HMEMORYMODULE)CurEntry->DllBase)) {
+
+			//
+			// Make sure all memory module is unloaded.
+			//
+
+			return STATUS_NOT_SUPPORTED;
+		}
+	}
+
+	if (--MmpGlobalDataPtr->ReferenceCount > 0) {
+		return STATUS_SUCCESS;
+	}
+
+	MmpTlsCleanup();
+	MmpCleanupDotNetHooks();
+
+	NtUnmapViewOfSection(NtCurrentProcess(), MmpGlobalDataPtr->BaseAddress);
+	MmpGlobalDataPtr = nullptr;
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS NTAPI MmCleanup() {
+	NTSTATUS status;
+	PVOID cookie;
+	LdrLockLoaderLock(LDR_LOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, nullptr, &cookie);
+
+	__try {
+
+		if (MmpGlobalDataPtr == nullptr) {
+			status = STATUS_ACCESS_VIOLATION;
+			__leave;
+		}
+
+		status = CleanupLockHeld();
+	}
+	__finally {
+		LdrUnlockLoaderLock(LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS, cookie);
+	}
+
+	return status;
 }
 
 #ifdef _USRDLL
@@ -542,7 +602,8 @@ extern "C" __declspec(dllexport) BOOL WINAPI ReflectiveMapDll(HMODULE hModule) {
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved) {
 	if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
-		if (NT_SUCCESS(Initialize())) {
+#ifdef _HAS_AUTO_INITIALIZE
+		if (NT_SUCCESS(MmInitialize())) {
 			if (lpReserved == (PVOID)-1) {
 				if (!ReflectiveMapDll(hModule)) {
 					RtlRaiseStatus(STATUS_NOT_SUPPORTED);
@@ -553,10 +614,13 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		}
 
 		return FALSE;
+#endif
 	}
 
 	return TRUE;
 }
 #else
-const NTSTATUS Initializer = Initialize();
+#ifdef _HAS_AUTO_INITIALIZE
+const NTSTATUS Initializer = MmInitialize();
+#endif
 #endif
