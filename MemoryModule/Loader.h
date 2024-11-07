@@ -9,9 +9,6 @@
 #define MEMORY_FEATURE_LDRP_RELEASE_TLS_ENTRY		0x00000040
 #define MEMORY_FEATURE_ALL                          0x0000007f
 
-//Get the implementation of the currently running operating system.
-NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(_Out_ PDWORD pFeatures);
-
 
 /*
 	LdrLoadDllMemoryEx dwFlags
@@ -47,21 +44,24 @@ NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(_Out_ PDWORD pFeatures);
 //Hook for dotnet dlls
 #define LOAD_FLAGS_HOOK_DOT_NET						0x00000010
 
-
-NTSTATUS NTAPI LdrLoadDllMemoryExW(
-	_Out_ HMEMORYMODULE* BaseAddress,		// Output module base address
-	_Out_opt_ PVOID* LdrEntry,				// Receive a pointer to the LDR node of the module
-	_In_ DWORD dwFlags,						// Flags
-	_In_ LPVOID BufferAddress,				// Pointer to the dll file data buffer
-	_In_ size_t Reserved,					// Reserved parameter, must be 0
-	_In_opt_ LPCWSTR DllName,				// Module file name
-	_In_opt_ LPCWSTR DllFullName			// Module file full path
-);
-
-//Unload modules previously loaded from memory
-NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress);
-
 extern "C" {
+
+	//Get the implementation of the currently running operating system.
+	NTSTATUS NTAPI LdrQuerySystemMemoryModuleFeatures(_Out_ PDWORD pFeatures);
+
+	NTSTATUS NTAPI LdrLoadDllMemoryExW(
+		_Out_ HMEMORYMODULE* BaseAddress,		// Output module base address
+		_Out_opt_ PVOID* LdrEntry,				// Receive a pointer to the LDR node of the module
+		_In_ DWORD dwFlags,						// Flags
+		_In_ LPVOID BufferAddress,				// Pointer to the dll file data buffer
+		_In_ size_t Reserved,					// Reserved parameter, must be 0
+		_In_opt_ LPCWSTR DllName,				// Module file name
+		_In_opt_ LPCWSTR DllFullName			// Module file full path
+	);
+
+	//Unload modules previously loaded from memory
+	NTSTATUS NTAPI LdrUnloadDllMemory(_In_ HMEMORYMODULE BaseAddress);
+
 	__declspec(noreturn) VOID NTAPI LdrUnloadDllMemoryAndExitThread(
 		_In_ HMEMORYMODULE BaseAddress,
 		_In_ DWORD dwExitCode
