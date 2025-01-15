@@ -272,9 +272,12 @@ NTSTATUS NTAPI RtlGetReferenceCount(
 VOID NTAPI RtlInsertMemoryTableEntry(_In_ PLDR_DATA_TABLE_ENTRY LdrEntry) {
 	PPEB_LDR_DATA PebData = NtCurrentPeb()->Ldr;
 	PLIST_ENTRY LdrpHashTable = MmpGlobalDataPtr->MmpLdrEntry->LdrpHashTable;
-	ULONG i;
+
+	/* Validate hash table */
+	if (!MmpGlobalDataPtr->MmpLdrEntry->LdrpHashTable) return;
 
 	/* Insert into hash table */
+	ULONG i;
 	i = LdrHashEntry(LdrEntry->BaseDllName);
 	InsertTailList(&LdrpHashTable[i], &LdrEntry->HashLinks);
 

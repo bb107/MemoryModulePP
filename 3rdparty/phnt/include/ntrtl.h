@@ -30,14 +30,17 @@ FORCEINLINE BOOLEAN RemoveEntryList(
     _In_ PLIST_ENTRY Entry
     )
 {
-    PLIST_ENTRY Blink;
-    PLIST_ENTRY Flink;
+    if (!Entry) return FALSE;
 
-    Flink = Entry->Flink;
-    Blink = Entry->Blink;
+    PLIST_ENTRY Blink = Entry->Blink;
+    PLIST_ENTRY Flink = Entry->Flink;
+
+    if (!Blink || !Flink) return FALSE;
+
     Blink->Flink = Flink;
     Flink->Blink = Blink;
-
+    Entry->Flink = NULL;
+    Entry->Blink = NULL;
     return Flink == Blink;
 }
 
