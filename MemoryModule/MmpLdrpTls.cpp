@@ -6,35 +6,13 @@ static bool stdcall;
 static PVOID LdrpHandleTlsData;
 static PVOID LdrpReleaseTlsEntry;
 
-static NTSTATUS NTAPI RtlFindLdrpHandleTlsData() {
+static NTSTATUS NTAPI RtlFindLdrpHandleTlsDataOld() {
 	NTSTATUS status = STATUS_SUCCESS;
 	LPCVOID Feature = nullptr;
 	BYTE Size = 0;
 	WORD OffsetOfFunctionBegin = 0;
 
 	switch (MmpGlobalDataPtr->NtVersions.MajorVersion) {
-	case 10: {
-		if (MmpGlobalDataPtr->NtVersions.MinorVersion)return STATUS_NOT_SUPPORTED;
-
-		if (MmpGlobalDataPtr->NtVersions.BuildNumber >= 22621) {
-#ifdef _WIN64
-			Feature = "\x39\x1D\x23\xFC\x17\x00\x74\x37\x44\x8D\x43\x09\x44\x39\x81\x0C\x01\x00\x00\x74\x2A";
-			Size = 22;
-			OffsetOfFunctionBegin = 0x43;
-#else
-			return STATUS_NOT_SUPPORTED;
-#endif
-		}
-		//
-		// Add more conditions here.
-		//
-		// else if (MmpGlobalDataPtr->NtVersions.BuildNumber >= XXXXXXXXX)
-		else {
-			return STATUS_NOT_SUPPORTED;
-		}
-
-		break;
-	}
 	case 6: {
 		switch (MmpGlobalDataPtr->NtVersions.MinorVersion) {
 			//8.1
@@ -94,6 +72,79 @@ static NTSTATUS NTAPI RtlFindLdrpHandleTlsData() {
 	return status;
 }
 
+static NTSTATUS NTAPI RtlFindLdrpHandleTlsData10() {
+	LPVOID DllBase = MmpGlobalDataPtr->MmpBaseAddressIndex->NtdllLdrEntry->DllBase;
+#ifdef _WIN64
+	// search for LdrpHandleTls string literal
+	SEARCH_CONTEXT SearchContext{ SearchContext.SearchPattern = LPBYTE("LdrpHandleTlsData\x00"), SearchContext.PatternSize = 18 };
+	if (!NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(DllBase), ".rdata", &SearchContext)))
+		return STATUS_NOT_SUPPORTED;
+	LPBYTE StringOffset = SearchContext.Result;
+
+	SearchContext.Result = nullptr;
+	SearchContext.PatternSize = 3;
+	SearchContext.SearchPattern = LPBYTE("\x48\x8D\x15");
+	LPBYTE ExceptionBlock = nullptr;
+
+	// Search for lea rdx,[rip+0x????]
+	// ???? is the relative offset from RIP to LdrpHandleTls string literal
+	while (NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(DllBase), ".text", &SearchContext))) {
+		DWORD InsOff = *(DWORD*)(SearchContext.Result + 3);
+		if (StringOffset == SearchContext.Result + InsOff + 7) {
+			ExceptionBlock = SearchContext.Result;
+			break;
+		}
+	}
+	if (!ExceptionBlock) return STATUS_NOT_SUPPORTED;
+
+	// Search back for exception block function header
+	while (*ExceptionBlock != 0xcc) {
+		// Normally ~13 bytes, but just in case...
+		if (SearchContext.Result - ExceptionBlock > 0x50) return STATUS_NOT_SUPPORTED;
+		ExceptionBlock--;
+	}
+	ExceptionBlock++;
+
+	// search for C_SCOPE_TABLE
+	union Converter {
+		BYTE Bytes[4];
+		DWORD Dword;
+	};
+	Converter ExceptionBlockAddress{ .Dword = DWORD(ExceptionBlock - LPBYTE(DllBase)) };
+	SearchContext.Result = nullptr;
+	SearchContext.PatternSize = 4;
+	SearchContext.SearchPattern = ExceptionBlockAddress.Bytes;
+	if (!NT_SUCCESS(RtlFindMemoryBlockFromModuleSection(HMODULE(DllBase), ".rdata", &SearchContext)))
+		return STATUS_NOT_SUPPORTED;
+
+	// C_SCOPE_TABLE$$Begin
+	LPBYTE LdrpHandleTlsDataBlock = *(LPDWORD)(SearchContext.Result - 8) + LPBYTE(DllBase);
+	LPBYTE LdrpHandleTlsDataBlockBackup = LdrpHandleTlsDataBlock;
+
+	// Search back for LdrpHandleTls
+	// Search up for 0xCC, and make sure it's not false positive by checking alignment (0x4)
+	while (*LdrpHandleTlsDataBlock != 0xcc || (((LONGLONG)LdrpHandleTlsDataBlock + 1) % 0x4) != 0) {
+		// Normally ~0x140 bytes
+		if (LdrpHandleTlsDataBlockBackup - LdrpHandleTlsDataBlock > 0x400) return STATUS_NOT_SUPPORTED;
+		LdrpHandleTlsDataBlock--;
+	}
+	LdrpHandleTlsDataBlock++;
+	LdrpHandleTlsData = LdrpHandleTlsDataBlock;
+	return STATUS_SUCCESS;
+#else
+	return STATUS_NOT_SUPPORTED;
+#endif
+}
+
+static NTSTATUS NTAPI RtlFindLdrpHandleTlsData() {
+	if (MmpGlobalDataPtr->NtVersions.MajorVersion >= 10) {
+		return RtlFindLdrpHandleTlsData10();
+	}
+	else {
+		return RtlFindLdrpHandleTlsDataOld();
+	}
+}
+
 static NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry() {
 	NTSTATUS status = STATUS_SUCCESS;
 	LPCVOID Feature = nullptr;
@@ -104,23 +155,12 @@ static NTSTATUS NTAPI RtlFindLdrpReleaseTlsEntry() {
 	case 10: {
 		if (MmpGlobalDataPtr->NtVersions.MinorVersion) return STATUS_NOT_SUPPORTED;
 
-		if (MmpGlobalDataPtr->NtVersions.BuildNumber >= 22621) {
 #ifdef _WIN64
-			Feature = "\x74\x34\x48\x8B\x08\x48\x39\x41\x08\x75\x65\x48\x8B\x40\x08\x48\x39\x18\x75\x5C\x48\x89\x08";
-			Size = 24;
-			OffsetOfFunctionBegin = 0x2F;
+		Feature = "\x48\x89\x5c\x24\x08\x57\x48\x83\xec\x20\x48\x8b\xfa\x48\x8b\xd9\x48\x85\xd2\x75\x0c";
+		Size = 21;
 #else
-			return STATUS_NOT_SUPPORTED;
+		return STATUS_NOT_SUPPORTED;
 #endif
-		}
-		//
-		// Add more conditions here.
-		//
-		// else if (MmpGlobalDataPtr->NtVersions.BuildNumber >= XXXXXXXXX)
-		else {
-			return STATUS_NOT_SUPPORTED;
-		}
-
 		break;
 	}
 	default:
