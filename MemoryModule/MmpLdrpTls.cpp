@@ -118,17 +118,19 @@ static NTSTATUS NTAPI RtlFindLdrpHandleTlsData10() {
 		return STATUS_NOT_SUPPORTED;
 
 	// C_SCOPE_TABLE$$Begin
-	LPBYTE LdrpHandleTlsDataBlock = *(LPDWORD)(SearchContext.Result - 8) + LPBYTE(DllBase);
-	LPBYTE LdrpHandleTlsDataBlockBackup = LdrpHandleTlsDataBlock;
+	LPDWORD LdrpHandleTlsBlock = LPDWORD(*(LPDWORD)(SearchContext.Result - 8) + LPBYTE(DllBase));
+	// Pad to 0x04
+	LdrpHandleTlsBlock = LPDWORD(LONGLONG(LdrpHandleTlsBlock) / 0x04 * 0x04);
+	LPDWORD LdrpHandleTlsBlockBackup = LdrpHandleTlsBlock;
 
 	// Search back for LdrpHandleTls
-	// Search up for 0xCC, and make sure it's not false positive by checking alignment (0x4)
-	while (*LdrpHandleTlsDataBlock != 0xcc || (((LONGLONG)LdrpHandleTlsDataBlock + 1) % 0x4) != 0) {
+	// Search up for 4 consecutive 0xCC
+	while (*LdrpHandleTlsBlock != 0xcccccccc) {
 		// Normally ~0x140 bytes
-		if (LdrpHandleTlsDataBlockBackup - LdrpHandleTlsDataBlock > 0x400) return STATUS_NOT_SUPPORTED;
-		LdrpHandleTlsDataBlock--;
+		if (LdrpHandleTlsBlockBackup - LdrpHandleTlsBlock > 0x400) return STATUS_NOT_SUPPORTED;
+		LdrpHandleTlsBlock--;
 	}
-	LdrpHandleTlsDataBlock++;
+	LdrpHandleTlsBlock++;
 	LdrpHandleTlsData = LdrpHandleTlsDataBlock;
 	return STATUS_SUCCESS;
 #else
