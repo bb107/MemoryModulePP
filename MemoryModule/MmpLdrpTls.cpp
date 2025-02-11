@@ -110,7 +110,9 @@ static NTSTATUS NTAPI RtlFindLdrpHandleTlsData10() {
 		BYTE Bytes[4];
 		DWORD Dword;
 	};
-	Converter ExceptionBlockAddress{ .Dword = DWORD(ExceptionBlock - LPBYTE(DllBase)) };
+	Converter ExceptionBlockAddress{}; // { .Dword = DWORD(ExceptionBlock - LPBYTE(DllBase)) };
+	ExceptionBlockAddress.Dword = DWORD(ExceptionBlock - LPBYTE(DllBase));
+
 	SearchContext.Result = nullptr;
 	SearchContext.PatternSize = 4;
 	SearchContext.SearchPattern = ExceptionBlockAddress.Bytes;
@@ -131,7 +133,7 @@ static NTSTATUS NTAPI RtlFindLdrpHandleTlsData10() {
 		LdrpHandleTlsBlock--;
 	}
 	LdrpHandleTlsBlock++;
-	LdrpHandleTlsData = LdrpHandleTlsDataBlock;
+	LdrpHandleTlsData = LdrpHandleTlsBlock;
 	return STATUS_SUCCESS;
 #else
 	return STATUS_NOT_SUPPORTED;
@@ -190,6 +192,10 @@ BOOL NTAPI MmpTlsInitialize() {
 
 	stdcall = !RtlIsWindowsVersionOrGreater(6, 3, 0);
 	return TRUE;
+}
+
+VOID NTAPI MmpTlsCleanup() {
+	;
 }
 
 NTSTATUS NTAPI MmpReleaseTlsEntry(_In_ PLDR_DATA_TABLE_ENTRY lpModuleEntry) {
